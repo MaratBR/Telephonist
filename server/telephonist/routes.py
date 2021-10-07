@@ -1,9 +1,7 @@
 import asyncio
-from datetime import datetime
 from typing import Optional, Any
 
 from beanie import PydanticObjectId
-from beanie.odm.enums import SortDirection
 from bson.errors import InvalidId
 from fastapi import APIRouter, Depends, Body, HTTPException
 from pydantic import BaseModel
@@ -43,7 +41,6 @@ async def get_application_token(token: GetApplicationTokenRequest):
             'token_type': 'bearer'
         }
     raise HTTPException(404, 'Application with given token not found')
-
 
 
 class PublishEventRequest(BaseModel):

@@ -46,7 +46,7 @@ class PaginationWithOrdering(Pagination):
 
     @classmethod
     def from_choices(cls, choices: List[str]):
-        FieldEnum = Enum('FieldEnum', {k: k for k in choices}) # noqa
+        FieldEnum = Enum('FieldEnum', {k: k for k in choices})  # noqa
 
         class NewType(cls):
             def __init__(self,

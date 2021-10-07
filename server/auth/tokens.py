@@ -1,10 +1,10 @@
 import secrets
-from typing import Optional, Type, Generic, TypeVar
+from typing import Optional
 
-from beanie import Document
 from jose import jwt
 
 from server.settings import settings
+
 
 # ========================================= #
 # Кодирование и декодирование JWT токенов.  #

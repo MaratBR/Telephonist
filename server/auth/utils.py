@@ -1,8 +1,8 @@
-from datetime import timedelta, datetime
+from datetime import timedelta
 from typing import Optional, Dict, Type, TypeVar, List, Set, Union
 
-from beanie import PydanticObjectId, Document
-from fastapi import HTTPException, Security, Depends, Header
+from beanie import Document
+from fastapi import HTTPException, Depends, Header
 from fastapi.openapi.models import OAuthFlows
 from fastapi.security import OAuth2
 from fastapi.security.utils import get_authorization_scheme_param
@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from starlette import status
 
 from server.auth import Scopes
-from server.auth.hash import verify_password, hash_password
+from server.auth.hash import verify_password
 from server.auth.models import BlockedAccessToken, TokenModel, User, token_subjects_registry
 from server.auth.tokens import decode_token
 
@@ -101,8 +101,10 @@ def parse_token(token: str) -> TokenModel:
 def _get_token(jwt: str = Depends(require_bearer)):
     return parse_token(jwt)
 
+
 def Token():  # noqa N802
     return Depends(_get_token)
+
 
 def TokenDependency(  # noqa N802
         token_type: Optional[Union[str, Set[str]]] = None,
@@ -149,12 +151,12 @@ def UserToken():  # noqa
     return TokenDependency(token_type='access', subject=User)
 
 
-def UserRefreshToken(): # noqa
+def UserRefreshToken():  # noqa
     return TokenDependency(token_type='refresh', subject=User)
 
 
 async def _require_current_user(
-    token: TokenModel = UserToken()
+        token: TokenModel = UserToken()
 ) -> User:
     if await BlockedAccessToken.is_blocked(token.jti):
         raise AuthError('This token has been revoked')
@@ -165,7 +167,7 @@ async def _require_current_user(
 
 
 async def _current_user(
-    token: TokenModel = UserToken()
+        token: TokenModel = UserToken()
 ) -> Optional[User]:
     try:
         return await _require_current_user(token)
@@ -173,7 +175,7 @@ async def _current_user(
         return None
 
 
-def CurrentUser(required: bool = True): # noqa
+def CurrentUser(required: bool = True):  # noqa
     get = _require_current_user
     if not required:
         get = _current_user

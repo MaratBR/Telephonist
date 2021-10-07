@@ -12,5 +12,5 @@ class Scopes:
     ALL = {
         ME,
         APP_VIEW, APP_CREATE, APP_DELETE, APP_MODIFY,
-        EVENTS_VIEW,EVENTS_RAISE
+        EVENTS_VIEW, EVENTS_RAISE
     }

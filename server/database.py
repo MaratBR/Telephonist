@@ -1,5 +1,5 @@
 import asyncio
-from typing import Type, TypeVar, Optional
+from typing import TypeVar, Optional
 
 import motor.motor_asyncio
 from beanie import Document, init_beanie
@@ -38,4 +38,3 @@ async def init_database():
 
 async def shutdown_database():
     pass
-

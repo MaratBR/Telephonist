@@ -1,4 +1,3 @@
-from datetime import timedelta
 from typing import Optional
 
 import fastapi
@@ -9,7 +8,7 @@ from pymongo.errors import DuplicateKeyError
 from starlette.responses import Response
 
 from server.auth.models import User
-from server.auth.utils import CurrentUser, find_user_by_credentials, create_access_token
+from server.auth.utils import CurrentUser, find_user_by_credentials
 
 router = fastapi.routing.APIRouter()
 

@@ -1,13 +1,9 @@
 import enum
-import uuid
 from datetime import datetime
-from typing import Union, Optional, Any, List, AsyncIterator, Awaitable
-from uuid import UUID
+from typing import Union, Optional, Any, List, Awaitable
 
 import nanoid
-import pydantic
 from beanie import Document, Indexed, PydanticObjectId
-from beanie.operators import Push, Pull
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 from starlette.websockets import WebSocket
@@ -186,4 +182,3 @@ class Server(Document):
 class EventQueueBucket(Document):
     events: List[Event]
     app_id: Indexed(PydanticObjectId)
-

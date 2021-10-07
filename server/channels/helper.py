@@ -5,7 +5,6 @@ import json
 from json import JSONDecodeError
 from typing import Optional, Callable, Any, Awaitable, Union, Type, Dict, OrderedDict
 
-import pydantic.json
 from fastapi import Depends
 from pydantic import BaseModel, ValidationError
 from starlette.websockets import WebSocket, WebSocketDisconnect

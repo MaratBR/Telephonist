@@ -14,4 +14,3 @@ class TelephonistAuth:
     ):
         self.user = user
         self.token = token
-
