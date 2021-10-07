@@ -1,14 +1,12 @@
-import abc
 import base64
 import hashlib
-import pydantic.main
 import re
 from datetime import timedelta, datetime
-from typing import Optional, Tuple, Type, Set, TypeVar, Union
+from typing import Optional, Tuple, Type, Set, Union
 
 import nanoid
 from beanie import Document, Indexed, PydanticObjectId
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from pymongo.errors import DuplicateKeyError
 
 from server.auth.hash import hash_password
@@ -118,27 +116,27 @@ token_subjects_registry: TypeRegistry[TokenSubjectMixin] = _TokenSubjectsRegistr
 
 
 @register_model
-class User(TokenSubjectMixin, Document):
+class User(Document, TokenSubjectMixin):
     username: Indexed(str, unique=True)
+    email: Optional[EmailStr] = None
     password_hash: str
     disabled: bool = False
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    disabled_at: Optional[datetime] = None
+
+    class Collection:
+        name = 'users'
+        indexes = ['email', 'disabled']
 
     class View(BaseModel):
         username: str
         disabled: bool
-        created_at: datetime
+        id: PydanticObjectId
+
+        @property
+        def created_at(self) -> datetime:
+            return self.id.generation_time
 
     def __str__(self):
         return self.username
-
-    async def disable(self):
-        if self.disabled:
-            return
-        self.disabled = True
-        self.disabled_at = datetime.utcnow()
-        await self.save()
 
     @classmethod
     async def by_username(
@@ -146,9 +144,8 @@ class User(TokenSubjectMixin, Document):
             username: str,
             include_disabled: bool = False
     ) -> Optional['User']:
+        q = cls if include_disabled else cls.find(cls.disabled == False)
         q = cls.find(cls.username == username)
-        if not include_disabled:
-            q = q.find(cls.disabled == False)
         q = q.limit(1)
         results = await q.to_list()
         if len(results) == 0:
@@ -156,8 +153,13 @@ class User(TokenSubjectMixin, Document):
         return results[0]
 
     @classmethod
-    async def create_user(cls, username: str, password: str):
-        user = cls(username=username, password_hash=hash_password(password))
+    async def create_user(
+            cls,
+            username: str,
+            password: str,
+            email: Optional[EmailStr] = None
+    ):
+        user = cls(username=username, password_hash=hash_password(password), email=email)
         await user.save()
         return user
 
