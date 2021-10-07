@@ -1,10 +1,7 @@
-import asyncio
 from datetime import timedelta, datetime
 from typing import Optional, Dict, Type, TypeVar, List, Set, Union
 
-import nanoid
 from beanie import PydanticObjectId, Document
-from bson.errors import InvalidId
 from fastapi import HTTPException, Security, Depends, Header
 from fastapi.openapi.models import OAuthFlows
 from fastapi.security import OAuth2
@@ -148,8 +145,16 @@ def TokenDependency(  # noqa N802
     return Depends(get_token_dependency)
 
 
+def UserToken():  # noqa
+    return TokenDependency(token_type='access', subject=User)
+
+
+def UserRefreshToken(): # noqa
+    return TokenDependency(token_type='refresh', subject=User)
+
+
 async def _require_current_user(
-    token: TokenModel = TokenDependency(token_type='access', subject=User)
+    token: TokenModel = UserToken()
 ) -> User:
     if await BlockedAccessToken.is_blocked(token.jti):
         raise AuthError('This token has been revoked')
@@ -160,7 +165,7 @@ async def _require_current_user(
 
 
 async def _current_user(
-    token: TokenModel = TokenDependency(token_type='access', subject=User)
+    token: TokenModel = UserToken()
 ) -> Optional[User]:
     try:
         return await _require_current_user(token)
@@ -168,7 +173,7 @@ async def _current_user(
         return None
 
 
-def CurrentUser(required: bool = True): # noqa N802
+def CurrentUser(required: bool = True): # noqa
     get = _require_current_user
     if not required:
         get = _current_user
