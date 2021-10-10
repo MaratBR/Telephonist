@@ -5,6 +5,7 @@ from typing import Type, Optional, Generic, List, TypeVar
 from beanie import Document
 from beanie.odm.enums import SortDirection
 from fastapi.params import Depends, Query
+from pydantic import BaseModel
 from pydantic.generics import GenericModel
 
 
@@ -60,7 +61,7 @@ class PaginationWithOrdering(Pagination):
 
         return Depends(NewType)
 
-    async def paginate(self, cls: Type[Document]):
+    async def paginate(self, cls: Type[Document], project: Optional[Type[BaseModel]] = None):
         q = cls.find()
         order = self.order or OrderingDirection.ASC
         ordered_by = self.field or '_id'
@@ -69,6 +70,8 @@ class PaginationWithOrdering(Pagination):
             (ordered_by, SortDirection.DESCENDING if order == OrderingDirection.DESC else SortDirection.ASCENDING))
         total = await q.count()
         q = q.skip((self.page - 1) * self.page_size).limit(self.page_size)
+        if project:
+            q = q.project(project)
         items = await q.to_list()
 
         return PaginationResult(

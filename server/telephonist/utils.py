@@ -1,10 +1,20 @@
-from typing import Union, Optional
+from typing import Union, Optional, TypeVar
 
 from beanie import PydanticObjectId
+from fastapi import HTTPException
+from starlette import status
 
 from server.auth.models import User
 from server.channels import broadcast
 from server.telephonist.models import Application, Event, EventMessage
+
+T = TypeVar('T')
+
+
+def raise404_if_none(value: Optional[T], message: str = 'Not found') -> T:
+    if value is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, message)
+    return value
 
 
 async def publish_event(
@@ -16,7 +26,7 @@ async def publish_event(
     event = await Event.create_event(event_type, source, data, source_ip)
     event_data = EventMessage.from_event(event)
     await broadcast.publish_many(
-        ['telephonist.events:' + event.event_type, 'telephonist.events'],
+        ['events:' + event.event_type, 'events'],
         event_data,
     )
     # TODO отправить событие в очередь для всех приложений, которые не доступны
@@ -28,3 +38,4 @@ async def wait_for_ping(app_id: Union[str, PydanticObjectId, Application], timeo
         'app_id': app_id,
         'timeout': timeout_seconds
     })
+

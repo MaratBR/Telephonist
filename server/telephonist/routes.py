@@ -1,31 +1,48 @@
 import asyncio
-from typing import Optional, Any
+from typing import Optional, Any, List
 
 from beanie import PydanticObjectId
 from bson.errors import InvalidId
 from fastapi import APIRouter, Depends, Body, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette import status
 from starlette.requests import Request
 from starlette.websockets import WebSocket
 
 from server.auth.models import User
-from server.auth.utils import require_bearer, CurrentUser
-from server.channels import BroadcastEvent, wscode
+from server.auth.utils import require_bearer, CurrentUser, UserToken
+from server.channels import BroadcastEvent, wscode, broadcast
 from server.channels.helper import ChannelHelper
 from server.common.models import PaginationWithOrdering
 from server.telephonist import utils
 from server.telephonist.models import Application, EventMessage, ConnectionInfo
+from server.telephonist.utils import raise404_if_none
 
 router = APIRouter()
 
 
 @router.get('/applications')
 async def get_applications(
-        args: PaginationWithOrdering = PaginationWithOrdering.from_choices(['name', 'created_at']),
+        args: PaginationWithOrdering = PaginationWithOrdering.from_choices(['name', 'id']),
 ):
-    p = await args.paginate(Application)
+    p = await args.paginate(Application, Application.PublicView)
     return p
+
+
+class CreateApplication(BaseModel):
+    name: str
+    description: Optional[str] = Field(max_length=400)
+    tags: Optional[List[str]]
+    disabled: bool = False
+
+
+@router.post('/applications')
+async def create_application(_=UserToken(), body: CreateApplication = Body(...)):
+    app = Application(
+        name=body.name, description=body.description, disabled=body.disabled,
+        tags=[] if body.tags is None else list(set(body.tags)),
+    )
+    await app.save()
 
 
 class GetApplicationTokenRequest(BaseModel):
@@ -41,6 +58,52 @@ async def get_application_token(token: GetApplicationTokenRequest):
             'token_type': 'bearer'
         }
     raise HTTPException(404, 'Application with given token not found')
+
+
+@router.get('/applications/{app_id}')
+async def get_application(
+        app_id: PydanticObjectId
+):
+    return raise404_if_none(
+        await Application.find_one({'_id': app_id}).project(Application.PublicView),
+        'Application not found'
+    )
+
+
+class UpdateApplication(BaseModel):
+    name: Optional[str]
+    description: Optional[str] = Field(max_length=400)
+    disabled: Optional[bool]
+    receive_offline: Optional[bool]
+
+
+@router.get('/applications/name/{app_name}')
+async def get_application(
+        app_name: str
+):
+    return raise404_if_none(
+        await Application.find_one(Application.name == app_name).project(Application.PublicView),
+        'Application not found'
+    )
+
+
+@router.patch('/application/{app_id}')
+async def update_application(app_id: PydanticObjectId, body: UpdateApplication = Body(...)):
+    app = raise404_if_none(await Application.get(app_id))
+    app.name = body.name or app.display_name
+    app.description = body.description or app.description
+
+    if body.receive_offline is not None:
+        app.settings.receive_offline = body.receive_offline
+
+    await app.save_changes()
+
+    if body.disabled is not None and body.disabled != app.disabled:
+        if body.disabled:
+            await broadcast.publish(f'app_disabled:{app_id}')
+        app.disabled = body.disabled
+
+    return app
 
 
 class PublishEventRequest(BaseModel):
@@ -68,26 +131,6 @@ async def publish_event(
         event_data.data,
     )
     return {'details': 'Published'}
-
-
-@router.get('/applications/{app_id}')
-async def get_application(
-        app_id: PydanticObjectId
-):
-    app = await Application.get(app_id)
-    if app is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f'Application _id="{app_id}" not found')
-    return app
-
-
-@router.get('/applications/name/{app_name}')
-async def get_application(
-        app_name: str
-):
-    app = await Application.find_one(Application.name == app_name)
-    if app is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f'Application "{app_name}" not found')
-    return app
 
 
 @router.post('/app-report/{app_id}/startup')
@@ -154,7 +197,7 @@ async def app_report(
         })
 
     await asyncio.gather(*(
-        helper.subscribe('telephonist.events:' + sub.channel, event)
+        helper.subscribe('events:' + sub.channel, event)
         for sub in app.event_subscriptions
     ))
 
@@ -174,12 +217,12 @@ async def app_report(
             pass
         elif msg_type == 'sub':
             if isinstance(data, str):
-                await helper.subscribe('telephonist.events:' + data, event)
+                await helper.subscribe('events:' + data, event)
                 await app.add_subscription(data)
                 await helper.send_message('subscribed', data)
         elif msg_type == 'unsub':
             if isinstance(data, str):
-                await helper.unsubscribe('telephonist.events:' + data)
+                await helper.unsubscribe('events:' + data)
                 await app.remove_subscription(data)
                 await helper.send_message('unsubscribed', data)
 

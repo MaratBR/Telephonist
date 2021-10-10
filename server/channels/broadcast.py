@@ -53,7 +53,7 @@ class Broadcast:
 
         self._logger = self.logger.getChild('memory' if self.is_memory else 'redis')
 
-    async def publish(self, channel: str, data: Any):
+    async def publish(self, channel: str, data: Any = None):
         self._logger.debug(f'publish {data} > {channel}')
         if self.is_memory:
             await self._in_memory_queue.put(BroadcastEvent(channel=channel, data=data))
@@ -197,17 +197,23 @@ class Broadcast:
                 await asyncio.sleep(.01)
         self._logger.debug('listener: exiting')
 
-    def _encode_message(self, data):
+    @staticmethod
+    def _encode_message(data):
+        if data is None:
+            return ''
         if isinstance(data, str):
             data = 'S:' + data
         else:
-            data = 'PICKLE.B85:' + base64.b85encode(pickle.dumps(data)).decode('ascii')
+            data = 'PICKLE85:' + base64.b85encode(pickle.dumps(data)).decode('ascii')
         return data
 
-    def _decode_message(self, message: str):
+    @staticmethod
+    def _decode_message(message: str):
+        if message == '':
+            return None
         encoding_type, text = message.split(':', maxsplit=1)
         encoding_type = encoding_type.upper()
-        if encoding_type == 'PICKLE.B85':
+        if encoding_type == 'PICKLE85':
             return pickle.loads(base64.b85decode(text))
         elif encoding_type == 'JSON':
             return json.loads(text)
