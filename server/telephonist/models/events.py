@@ -29,7 +29,6 @@ class Event(Document):
     source_id: Optional[PydanticObjectId]
     event_type: Indexed(str)
     data: Optional[Any] = None
-    published_at: datetime = Field(default_factory=datetime.utcnow)
     publisher_ip: str = '127.0.0.1'
     receivers: List[PydanticObjectId] = Field(default_factory=list)
 

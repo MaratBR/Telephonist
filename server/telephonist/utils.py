@@ -26,7 +26,7 @@ async def publish_event(
     event = await Event.create_event(event_type, source, data, source_ip)
     event_data = EventMessage.from_event(event)
     await broadcast.publish_many(
-        ['events:' + event.event_type, 'events'],
+        [InternalChannels.event(event_type), InternalChannels.EVENTS],
         event_data,
     )
     # TODO отправить событие в очередь для всех приложений, которые не доступны
@@ -39,3 +39,15 @@ async def wait_for_ping(app_id: Union[str, PydanticObjectId, Application], timeo
         'timeout': timeout_seconds
     })
 
+
+class InternalChannels:
+    EVENTS = 'events'
+    APPS = 'apps'
+
+    @classmethod
+    def event(cls, name: str):
+        return cls.EVENTS + '.' + name
+
+    @classmethod
+    def app_events(cls, app_id: Union[str, PydanticObjectId]):
+        return cls.APPS + '.' + str(app_id) + '.events'

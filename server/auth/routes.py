@@ -46,8 +46,8 @@ async def login_user(credentials: OAuth2PasswordRequestForm = Depends()):
     user = await find_user_by_credentials(credentials.username, credentials.password)
     if user is not None:
         response = LoginResponse(
-            access_token=user.create_token().encode(),
+            access_token=user.create_token(scope=set(credentials.scopes)).encode(),
             refresh_token=user.create_token(token_type='refresh').encode(),
         )
-        return Response(response.json())
+        return response
     raise HTTPException(401, 'User with given credentials not found')

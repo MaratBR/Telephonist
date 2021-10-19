@@ -18,6 +18,7 @@ from server.auth.tokens import decode_token
 
 # region Exceptions
 
+
 class AuthError(HTTPException):
     def __init__(self, message: str, inner: Optional[Exception] = None,
                  status_code: int = status.HTTP_401_UNAUTHORIZED):
@@ -40,7 +41,7 @@ class UserNotFound(AuthError):
 class OAuth2PasswordBearer(OAuth2):
     def __init__(
             self,
-            tokenUrl: str,
+            tokenUrl: str, # noqa
             scheme_name: Optional[str] = None,
             scopes: Optional[Dict[str, str]] = None,
             description: Optional[str] = None,
@@ -117,7 +118,7 @@ def TokenDependency(  # noqa N802
     if isinstance(token_type, str):
         token_type: Set[str] = {token_type}
 
-    def get_token_dependency(token: TokenModel = Token()):
+    async def get_token_dependency(token: TokenModel = Token()):
         if token_type and token.token_type not in token_type:
             allowed_token_types = ', '.join(map(lambda v: f'"{v}"', token_type))
             raise InvalidToken(
@@ -147,8 +148,8 @@ def TokenDependency(  # noqa N802
     return Depends(get_token_dependency)
 
 
-def UserToken():  # noqa
-    return TokenDependency(token_type='access', subject=User)
+def UserToken(scope: Optional[Set[str]] = None, required: bool = True):  # noqa
+    return TokenDependency(token_type='access', subject=User, scope=scope, required=required)
 
 
 def UserRefreshToken():  # noqa

@@ -5,11 +5,9 @@ import json
 from json import JSONDecodeError
 from typing import Optional, Callable, Any, Awaitable, Union, Type, Dict, OrderedDict
 
-from fastapi import Depends
 from pydantic import BaseModel, ValidationError
-from starlette.websockets import WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 
-from server.auth.utils import bearer
 from server.channels.broadcast import broadcast, BroadcastEvent
 from server.common.utils import AsyncMerger
 
@@ -26,11 +24,10 @@ class ChannelHelper:
     _events: Optional[AsyncMerger]
     _message_converter: Optional[Callable[[Any], Any]]
 
-    def __init__(self, websocket: WebSocket, token: Optional[str] = Depends(bearer)):
+    def __init__(self, websocket: WebSocket):
         self._ws = websocket
         self._initialized = False
         self._events = None
-        self.token = token
         self._message_converter = None
         self._fallback_channel_handler = None
 
@@ -45,6 +42,9 @@ class ChannelHelper:
         if not self._initialized:
             self._initialized = True
             await self.init()
+
+    async def accept(self):
+        await self._ws.accept()
 
     def message(self, handler_fn: Callable[[str, Any], Awaitable]):
         self._on_message = handler_fn
@@ -210,10 +210,7 @@ class ChannelHelper:
 
         self._events.add(_receive(), 'receiver_task')
 
-    async def send_channel(self, channel, data):
-        await broadcast.publish(channel, data)
-
-    async def send(self, data: Any):
+    async def send_json(self, data: Any):
         if isinstance(data, BaseModel):
             await self._ws.send_text(data=data.json())
         else:
@@ -226,7 +223,7 @@ class ChannelHelper:
             # вот это не будет работать: await self.send([msg_type, data.dict()])
             await self._ws.send_text(f'[{json.dumps(msg_type)}, {data.json()}]')
         else:
-            await self.send([msg_type, data])
+            await self.send_json([msg_type, data])
 
     async def send_error(self, error: Any):
         await self.send_message('error', error)
@@ -250,3 +247,8 @@ class ChannelHelper:
 
     def _stop(self):
         self._events.stop()
+
+    async def close(self, code: int = 1000, detail: Optional[str] = None):
+        if detail and self._ws.client_state == WebSocketState.CONNECTED:
+            await self.send_error(detail)
+        await self._ws.close(code)

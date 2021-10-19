@@ -5,17 +5,19 @@ import json
 import logging
 import pickle
 from contextlib import asynccontextmanager
-from typing import Optional, Dict, Set, AsyncIterable, Any, AsyncContextManager, List
+from typing import Optional, Dict, Set, AsyncIterable, Any, AsyncContextManager, List, Generic, TypeVar
 
 import aioredis
-from pydantic import BaseModel
+from pydantic.generics import GenericModel
 
 from server.settings import settings
 
+T = TypeVar('T')
 
-class BroadcastEvent(BaseModel):
+
+class BroadcastEvent(GenericModel, Generic[T]):
     channel: str
-    data: Any
+    data: T
     pattern: Optional[str]
 
 

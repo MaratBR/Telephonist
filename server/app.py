@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from server.auth.routes import router as auth_router
-from server.telephonist.routes import router as telephonist_router
+from server.telephonist.routes import telephonist_router
 from .channels.broadcast import broadcast
 from .database import init_database, shutdown_database
 
