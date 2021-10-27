@@ -1,9 +1,8 @@
 import asyncio
-import collections
 import enum
 import json
 from json import JSONDecodeError
-from typing import Optional, Callable, Any, Awaitable, Union, Type, Dict, OrderedDict
+from typing import Optional, Callable, Any, Awaitable, Union, Type, Dict
 
 from pydantic import BaseModel, ValidationError
 from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
@@ -25,7 +24,7 @@ class ChannelHelper:
     _message_converter: Optional[Callable[[Any], Any]]
 
     def __init__(self, websocket: WebSocket):
-        self._ws = websocket
+        self.ws = websocket
         self._initialized = False
         self._events = None
         self._message_converter = None
@@ -33,9 +32,7 @@ class ChannelHelper:
 
         self._subscription_tasks_ids = {}
         self._channel_handlers: Dict[str, Callable[[Any], Awaitable]] = {}
-        self._glob_patterns: OrderedDict[str, Callable[[Any], Awaitable]] = collections.OrderedDict()
         self._subscribed = set()
-        self._scheduled_psubscribe = set()
         self._scheduled_subscribe = set()
 
     async def _ensure_init(self):
@@ -44,7 +41,7 @@ class ChannelHelper:
             await self.init()
 
     async def accept(self):
-        await self._ws.accept()
+        await self.ws.accept()
 
     def message(self, handler_fn: Callable[[str, Any], Awaitable]):
         self._on_message = handler_fn
@@ -52,9 +49,9 @@ class ChannelHelper:
     def error(self, handler: Callable[[Exception], Awaitable]):
         self._on_exception = handler
 
-    def channel(self, name: str, *, glob: bool = True):
+    def channel(self, name: str):
         def decorator(fn):
-            self.subscribe(name, fn, glob=glob)
+            self.subscribe(name, fn)
             return fn
 
         return decorator
@@ -62,46 +59,36 @@ class ChannelHelper:
     def fallback_channel(self, handler: Callable[[str, Any], Awaitable]):
         self._fallback_channel_handler = handler
 
-    def set_channel_handler(self, name: str, fn: Callable[[Any], Awaitable], glob: bool = False):
-        if glob:
-            self._glob_patterns[name] = fn
-        else:
-            self._channel_handlers[name] = fn
+    def set_channel_handler(self, name: str, fn: Callable[[Any], Awaitable]):
+        self._channel_handlers[name] = fn
 
     @staticmethod
     async def _on_message(_name, _data):
         pass
 
     async def _on_exception(self, exception):
-        await self._ws.close(1011)
+        await self.ws.close(1011)
 
     async def _subscribe(self, name: str, glob: bool = False):
         assert self._initialized, 'helper is not initialized yet!'
 
         async def _drain():
-            sub_with = broadcast.psubscribe(name) if glob else broadcast.subscribe(name)
-            async with sub_with as sub:
+            async with broadcast.subscribe(name) as sub:
                 async for event in sub:
                     yield WSEvent.CHANNEL_MESSAGE, event
             yield WSEvent.CHANNEL_CLOSED, name
 
         self._events.add(_drain(), 'channel:' + name)
 
-    async def subscribe(self, channel: str, fn: Callable[[BroadcastEvent], Awaitable], *, glob: bool = False):
+    async def subscribe(self, channel: str, fn: Callable[[BroadcastEvent], Awaitable]):
         if channel in self._subscribed:
             return
-        if glob:
-            self._glob_patterns[channel] = fn
-        else:
-            self._channel_handlers[channel] = fn
+        self._channel_handlers[channel] = fn
         if self._initialized:
             self._subscribed.add(channel)
-            await self._subscribe(channel, glob=glob)
+            await self._subscribe(channel)
         else:
-            if glob:
-                self._scheduled_psubscribe.add(channel)
-            else:
-                self._scheduled_subscribe.add(channel)
+            self._scheduled_subscribe.add(channel)
 
     async def unsubscribe(self, channel: str):
         if channel not in self._subscribed:
@@ -110,8 +97,6 @@ class ChannelHelper:
 
         if channel in self._channel_handlers:
             del self._channel_handlers[channel]
-        elif channel in self._glob_patterns:
-            del self._glob_patterns[channel]
 
         self._events.remove('channel:' + channel)
 
@@ -121,13 +106,8 @@ class ChannelHelper:
             self._subscribe(channel)
             for channel in self._scheduled_subscribe
         ]
-        tasks += [
-            self._subscribe(pattern, glob=True)
-            for pattern in self._scheduled_psubscribe
-        ]
-        self._subscribed = {*self._scheduled_subscribe, *self._scheduled_psubscribe}
+        self._subscribed = self._scheduled_subscribe.copy()
         self._scheduled_subscribe.clear()
-        self._scheduled_psubscribe.clear()
         await asyncio.gather(*tasks)
 
     async def receive(self, pipe: Union[Callable[[Any], Any], Type[BaseModel]]):
@@ -143,7 +123,7 @@ class ChannelHelper:
         data = None
         while data is None:
             try:
-                data = await self._ws.receive_json()
+                data = await self.ws.receive_json()
             except JSONDecodeError:
                 continue
             data = pipe_fn(data)
@@ -196,7 +176,7 @@ class ChannelHelper:
             try:
                 while True:
                     try:
-                        message = await self._ws.receive_json()
+                        message = await self.ws.receive_json()
                     except JSONDecodeError as exc:
                         yield WSEvent.MESSAGE_ERROR, exc
                         continue
@@ -212,21 +192,23 @@ class ChannelHelper:
 
     async def send_json(self, data: Any):
         if isinstance(data, BaseModel):
-            await self._ws.send_text(data=data.json())
+            await self.ws.send_text(data=data.json())
         else:
-            await self._ws.send_json(data)
+            await self.ws.send_json(data)
 
     async def send_message(self, msg_type: str, data: Optional[Any] = None):
         if isinstance(data, BaseModel):
             # симулируем сериализацию в JSON, потому что pydantic использует
             # свой сериализатор, если просто использовать тут json.dumps не получится
             # вот это не будет работать: await self.send([msg_type, data.dict()])
-            await self._ws.send_text(f'[{json.dumps(msg_type)}, {data.json()}]')
+            await self.ws.send_text(f'[{json.dumps(msg_type)}, {data.json()}]')
+        elif isinstance(data, Exception):
+            await self.ws.send_json([msg_type, {'details': str(data), 'type': type(data).__name__}])
         else:
             await self.send_json([msg_type, data])
 
     async def send_error(self, error: Any):
-        await self.send_message('error', error)
+        await self.send_message('error', str)
 
     def set_message_pipe(
             self,
@@ -249,6 +231,6 @@ class ChannelHelper:
         self._events.stop()
 
     async def close(self, code: int = 1000, detail: Optional[str] = None):
-        if detail and self._ws.client_state == WebSocketState.CONNECTED:
+        if detail and self.ws.client_state == WebSocketState.CONNECTED:
             await self.send_error(detail)
-        await self._ws.close(code)
+        await self.ws.close(code)

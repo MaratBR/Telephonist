@@ -1,15 +1,17 @@
+import asyncio
 import enum
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Union, Iterable
 
 import nanoid
 from beanie import Document, Indexed, PydanticObjectId
+from beanie.operators import Set as SetOp, Inc
 from pydantic import BaseModel, Field
-from pymongo.errors import DuplicateKeyError
 from starlette.websockets import WebSocket
 
 from server.auth.models import TokenSubjectMixin
 from server.auth.tokens import static_token_factory
+from server.common.models import IdProjection
 from server.database import register_model
 
 
@@ -99,19 +101,59 @@ class Application(Document, TokenSubjectMixin):
         return app
 
     @classmethod
-    async def populate(cls):
-        APPLICATION_NAMES = [
-            'text',
-            'test',
-            'MyApp',
-            'TestApp',
-            'SuomiNPPProcessor',
-            'ArcticaM-Software'
-        ]
+    def find_subscribed(cls, to: str):
+        return cls.find({f'{cls.event_subscriptions}.{Subscription.channel}': to})
 
-        for i in range(10):
-            for app_name in APPLICATION_NAMES:
-                try:
-                    await cls.create_application(app_name + str(i))
-                except DuplicateKeyError:
-                    pass
+    @classmethod
+    async def find_subscribed_id(cls, to: str) -> List[PydanticObjectId]:
+        return list(
+            map(lambda v: v.id, await cls.find_subscribed(to).project(IdProjection).to_list())
+        )
+
+    @classmethod
+    async def populate(cls):
+        app1 = await cls.create_application('app1')
+        await app1.add_subscription('test_event')
+        await app1.add_subscription('test_event2')
+        app2 = await cls.create_application('app2')
+        await app2.add_subscription('test_event2')
+        await app2.add_subscription('test_event3')
+        await app2.add_subscription('test_event4')
+
+
+class SentEventTrace(Document):
+    from_app: Optional[PydanticObjectId]
+    to_app: PydanticObjectId
+    event_type: str
+    last_event: datetime = Field(default_factory=datetime.utcnow)
+    times_used: int = 1
+
+    class Collection:
+        name = 'event_traces'
+
+    @classmethod
+    def add_trace(
+            cls,
+            event_type: str,
+            to_app: Union[PydanticObjectId, Iterable[PydanticObjectId]],
+            from_app: Optional[PydanticObjectId]
+    ):
+        if isinstance(to_app, PydanticObjectId):
+            return cls._add_trace(event_type, to_app, from_app)
+        else:
+            return asyncio.gather(*(
+                cls._add_trace(event_type, app_id, from_app)
+                for app_id in to_app
+            ))
+
+    @classmethod
+    async def _add_trace(cls, event_type: str, to_app: PydanticObjectId, from_app: Optional[PydanticObjectId]):
+        await cls.find(
+            cls.to_app == to_app,
+            cls.event_type == event_type,
+            cls.from_app == from_app
+        ).upsert(
+            SetOp({cls.last_event: datetime.utcnow()}),
+            Inc(cls.count),
+            on_insert=cls(event_type=event_type, from_app=from_app, to_app=to_app)
+        )

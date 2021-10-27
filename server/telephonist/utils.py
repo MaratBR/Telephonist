@@ -1,3 +1,4 @@
+import asyncio
 from typing import Union, Optional, TypeVar
 
 from beanie import PydanticObjectId
@@ -6,7 +7,7 @@ from starlette import status
 
 from server.auth.models import User
 from server.channels import broadcast
-from server.telephonist.models import Application, Event, EventMessage
+from server.telephonist.models import Application, Event, EventMessage, SentEventTrace
 
 T = TypeVar('T')
 
@@ -25,19 +26,24 @@ async def publish_event(
 ) -> Event:
     event = await Event.create_event(event_type, source, data, source_ip)
     event_data = EventMessage.from_event(event)
-    await broadcast.publish_many(
-        [InternalChannels.event(event_type), InternalChannels.EVENTS],
-        event_data,
+    subscribed_ids = await Application.find_subscribed_id(event_type)
+    await asyncio.gather(
+        broadcast.publish_many(
+            [
+                InternalChannels.event(event_type),
+                InternalChannels.EVENTS,
+                *map(InternalChannels.app_events, subscribed_ids)
+            ],
+            event_data,
+        ),
+
+        SentEventTrace.add_trace(
+            event_type,
+            subscribed_ids,
+            source.id if isinstance(source, Application) else None
+        )
     )
-    # TODO отправить событие в очередь для всех приложений, которые не доступны
     return event
-
-
-async def wait_for_ping(app_id: Union[str, PydanticObjectId, Application], timeout_seconds: float):
-    await broadcast.publish('internal:app_ping_requests', {
-        'app_id': app_id,
-        'timeout': timeout_seconds
-    })
 
 
 class InternalChannels:

@@ -1,4 +1,3 @@
-import asyncio
 from http.client import HTTPException
 from typing import *
 
@@ -20,6 +19,7 @@ from server.telephonist.models import Application, ConnectionInfo, EventMessage,
 from server.telephonist.utils import InternalChannels
 from ._router import router
 from .. import utils
+from ...channels.controller import ChannelController, message_handler
 
 
 class EventsFilter(BaseModel):
@@ -78,6 +78,12 @@ class AppRaiseEventMessage(BaseModel):
     data: Any
 
 
+class AppReportController(ChannelController):
+    @message_handler('initial')
+    async def on_initial(self, _msg):
+        pass
+
+
 @router.websocket('/events/app-report/{app_id}')
 async def app_report(
         app_id: Optional[str],
@@ -118,17 +124,12 @@ async def app_report(
     async def on_error(exc: Exception):
         print('got error', exc)
 
-    async def event(ev: BroadcastEvent):
-        telephonist_event: EventMessage = ev.data
-        await helper.send({
+    @helper.channel(InternalChannels.app_events(app.id))
+    async def event(ev: BroadcastEvent[EventMessage]):
+        await helper.send_json({
             'type': 'event',
-            'message': telephonist_event.json()
+            'message': ev.data.json()
         })
-
-    await asyncio.gather(*(
-        helper.subscribe('events:' + sub.channel, event)
-        for sub in app.event_subscriptions
-    ))
 
     await helper.send_message('subscribed', [sub.channel for sub in app.event_subscriptions])
 
@@ -171,6 +172,7 @@ async def all_events(
         await helper.send_message('event', event.data)
 
     await helper.start()
+
 
 @router.websocket('/events/app/{app_id}')
 async def app_events(

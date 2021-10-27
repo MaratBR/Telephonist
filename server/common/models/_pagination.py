@@ -49,18 +49,19 @@ class Pagination(_Pagination):
     def from_choices(cls, choices: List[str]):
         if '_id' not in choices:
             choices.append('_id')
-        FieldEnum = Enum('FieldEnum', {
+        choices.sort()
+        dictionary = {
             (k[1:] if k.startswith('_') else k): k for k in choices
-        })  # noqa
+        }
+        field_enum = Enum(f'FieldEnum_{"_".join(dictionary.keys())}', dictionary)  # noqa
 
         class NewType(cls):
             def __init__(self,
                          page: int = Query(1, gt=0),
                          page_size: int = Query(20, gt=4),
-                         field: Optional[FieldEnum] = Query(FieldEnum.id),
+                         field: Optional[field_enum] = Query(field_enum.id),
                          order: Optional[OrderingDirection] = Query(OrderingDirection.DESC)):
-                if isinstance(field, Enum):
-                    field = field.value
+                field = field.value
                 super(NewType, self).__init__(page, page_size, field, order)
 
         return Depends(NewType)

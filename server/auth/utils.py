@@ -1,10 +1,9 @@
 from datetime import timedelta
-from typing import Optional, Dict, Type, TypeVar, List, Set, Union
+from typing import Optional, Type, TypeVar, List, Set, Union
 
 from beanie import Document
 from fastapi import HTTPException, Depends, Header
-from fastapi.openapi.models import OAuthFlows
-from fastapi.security import OAuth2
+from fastapi.openapi.models import SecurityBase
 from fastapi.security.utils import get_authorization_scheme_param
 from jose import JWTError
 from pydantic import ValidationError
@@ -38,19 +37,13 @@ class UserNotFound(AuthError):
 # endregion
 
 
-class OAuth2PasswordBearer(OAuth2):
+class HybridBearerAuthentication(SecurityBase):
     def __init__(
             self,
-            tokenUrl: str, # noqa
             scheme_name: Optional[str] = None,
-            scopes: Optional[Dict[str, str]] = None,
             description: Optional[str] = None,
     ):
-        if not scopes:
-            scopes = {}
-        flows = OAuthFlows(password={"tokenUrl": tokenUrl, "scopes": scopes})
         super().__init__(
-            flows=flows,
             scheme_name=scheme_name,
             description=description,
         )
@@ -63,7 +56,7 @@ class OAuth2PasswordBearer(OAuth2):
 
 
 bearer = OAuth2PasswordBearer(
-    tokenUrl="/auth/token",
+    tokenUrl='/auth/token',
     scopes={
         Scopes.ME: 'Read and modify current user info',
         Scopes.APP_VIEW: 'View applications info (general info, subscriptions, etc.)',

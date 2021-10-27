@@ -13,7 +13,7 @@ from server.auth.utils import CurrentUser, find_user_by_credentials
 router = fastapi.routing.APIRouter()
 
 
-@router.get('/user', response_model=User)
+@router.get('/user', response_model=User.View)
 async def get_user(user: User = CurrentUser(required=True)):
     user = User.View(**user.dict())
     return Response(user.json())

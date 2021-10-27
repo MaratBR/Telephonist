@@ -10,6 +10,7 @@ from server.telephonist.models import Application
 from ._router import router
 from ..utils import raise404_if_none
 from ...auth import Scopes
+from ...channels import broadcast
 
 
 @router.get('/applications', responses={200: {"model": PaginationResult[Application.PublicView]}})

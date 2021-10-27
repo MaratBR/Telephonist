@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     jwt_issuer: Optional[str] = None
 
     redis_url: Optional[str] = 'redis://localhost:6379'
-    use_local_messaging: bool = True
+    broadcaster_url: str = 'memory://'
 
     db_url: str = 'mongodb://localhost:27017'
 

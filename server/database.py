@@ -1,8 +1,10 @@
 import asyncio
+from functools import partial
 from typing import TypeVar, Optional
 
 import motor.motor_asyncio
 from beanie import Document, init_beanie
+from pymongo.errors import DuplicateKeyError
 
 from server.settings import settings
 
@@ -30,9 +32,16 @@ async def init_database():
     await init_beanie(database=_client.telephonist, document_models=list(_models))
 
     init_coroutines = []
+
+    async def populate(model):
+        try:
+            await model.populate()
+        except DuplicateKeyError:
+            pass
+
     for model in _models:
         if hasattr(model, 'populate') and callable(model.populate):
-            init_coroutines.append(model.populate())
+            init_coroutines.append(partial(populate, model)())
     await asyncio.gather(*init_coroutines)
 
 
