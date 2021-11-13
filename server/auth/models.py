@@ -2,15 +2,16 @@ import base64
 import hashlib
 import re
 from datetime import timedelta, datetime
-from typing import Optional, Tuple, Type, Set, Union
+from typing import Optional, Tuple, Type, Union
 
 import nanoid
 from beanie import Document, Indexed, PydanticObjectId
+from beanie.operators import Eq
 from pydantic import BaseModel, Field, EmailStr
 from pymongo.errors import DuplicateKeyError
 
 from server.auth.hash import hash_password
-from server.auth.tokens import create_static_token, encode_token
+from server.auth.tokens import create_static_token, encode_token, decode_token
 from server.common.models import TypeRegistry
 from server.database import register_model
 
@@ -70,11 +71,14 @@ class TokenModel(BaseModel):
     sub: TokenSubjectID
     exp: Optional[int]
     jti: str = Field(default_factory=nanoid.generate)
-    scope: Set[str] = Field(default_factory=set)
     token_type: str
 
     def encode(self) -> str:
         return encode_token(self.token_dict())
+
+    @classmethod
+    def decode(cls, token: str):
+        return cls(**decode_token(token))
 
     def token_dict(self):
         d: dict = self.dict()
@@ -99,12 +103,14 @@ class TokenSubjectMixin(BaseModel):
     def create_token(
             self: Document,
             token_type: Optional[str] = 'access',
-            scope: Optional[Set[str]] = None,
+            jti: Optional[str] = None,
+            lifetime: Optional[timedelta] = None
     ):
         return TokenModel(
             token_type=token_type,
-            scope=scope or set(),
             sub=TokenSubjectID.from_document(self),
+            jti=jti,
+            exp=None if lifetime is None else (datetime.utcnow() + lifetime).timestamp()
         )
 
 
@@ -195,18 +201,33 @@ class RefreshToken(Document):
     expiration_date: datetime
     blocked: bool = False
     last_used: Optional[datetime] = None
+    user_id: PydanticObjectId
 
     @classmethod
-    async def is_blocked(cls, id: str) -> bool:
-        return await cls.find(cls.id == id).count() > 0
+    async def is_blocked(cls, token: str) -> bool:
+        return await cls.find(cls.id == cls._make_token_id(token)).count() > 0
 
     @classmethod
-    async def create_token(cls, lifetime: timedelta) -> Tuple['RefreshToken', str]:
-        token = create_static_token(prefix='refresh')
-        token_id = base64.urlsafe_b64encode(hashlib.sha256(token).digest())[:43].decode('ascii')
-        refresh_token = cls(expiration_date=datetime.now() + lifetime, id=token_id)
+    async def find_valid(cls, token: str) -> Optional['RefreshToken']:
+        return await cls.find_one(
+            cls.id == cls._make_token_id(token),
+            Eq(cls.blocked, False),
+            cls.expiration_date > datetime.utcnow()
+        )
+
+    @classmethod
+    async def create_token(cls, user: User, lifetime: timedelta) -> Tuple['RefreshToken', str]:
+        token = create_static_token(10)
+        refresh_token = cls(
+            user_id=user.id,
+            expiration_date=datetime.utcnow() + lifetime,
+            id=cls._make_token_id(token))
         await refresh_token.save()
         return refresh_token, token
 
     def matches(self, token: str):
         return self.id == base64.urlsafe_b64encode(hashlib.sha256(token).digest())[:43].decode('ascii')
+
+    @staticmethod
+    def _make_token_id(token: str):
+        return base64.urlsafe_b64encode(hashlib.sha256(token).digest())[:43].decode('ascii')

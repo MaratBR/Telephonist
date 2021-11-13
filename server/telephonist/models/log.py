@@ -1,4 +1,5 @@
 import enum
+from typing import Optional, Any
 
 from beanie import Document, PydanticObjectId
 
@@ -29,11 +30,16 @@ class AppLog(Document):
     app_id: PydanticObjectId
     type: AppLogType
     severity: Severity
-    body: str
+    body: AppLogBody
+    meta: Optional[Any] = None
 
     class Collection:
         name = 'app_logs'
 
     @classmethod
-    async def _log(cls, app_id: PydanticObjectId, log_type: AppLogType, severity: Severity):
-        pass
+    async def _log(cls, body: AppLogBody, app_id: PydanticObjectId, log_type: AppLogType, severity: Severity, meta: Optional[Any]):
+        await cls(app_id=app_id, type=log_type, severity=severity, meta=meta, body=body).save()
+
+    @classmethod
+    def stdout(cls, body: str, app_id: PydanticObjectId, severity: Severity = Severity.INFO, meta: Optional[Any] = None):
+        return cls._log(body, app_id, AppLogType.STDOUT, severity, meta)

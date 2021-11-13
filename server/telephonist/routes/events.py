@@ -9,7 +9,6 @@ from pydantic import BaseModel
 from starlette.requests import Request
 from starlette.websockets import WebSocket
 
-from server.auth import Scopes
 from server.auth.models import User, TokenModel
 from server.auth.utils import TokenDependency, UserToken
 from server.channels import ChannelHelper, wscode, BroadcastEvent
@@ -27,7 +26,7 @@ class EventsFilter(BaseModel):
     receiver: Optional[PydanticObjectId]
 
 
-@router.get('/events', dependencies=[UserToken(scope={Scopes.EVENTS_VIEW})])
+@router.get('/events', dependencies=[UserToken()])
 async def get_events(
         pagination: Pagination = Pagination.from_choices(['_id', 'event_type']),
         filter_data=QueryDict(EventsFilter)
@@ -164,7 +163,7 @@ async def app_report(
 
 @router.websocket('/events/all')
 async def all_events(
-        _=UserToken(scope={Scopes.EVENTS_VIEW}),
+        _=UserToken(),
         helper: ChannelHelper = Depends(),
 ):
     @helper.channel(InternalChannels.EVENTS)
@@ -177,7 +176,7 @@ async def all_events(
 @router.websocket('/events/app/{app_id}')
 async def app_events(
         app_id: PydanticObjectId,
-        token: Optional[TokenModel] = UserToken(scope={Scopes.EVENTS_VIEW}, required=False),
+        token: Optional[TokenModel] = UserToken(required=False),
         helper: ChannelHelper = Depends(),
 ):
     await helper.accept()

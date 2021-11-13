@@ -9,13 +9,12 @@ from server.common.models import Pagination, PaginationResult
 from server.telephonist.models import Application
 from ._router import router
 from ..utils import raise404_if_none
-from ...auth import Scopes
 from ...channels import broadcast
 
 
 @router.get('/applications', responses={200: {"model": PaginationResult[Application.PublicView]}})
 async def get_applications(
-        _=UserToken(scope={Scopes.APP_VIEW}),
+        _=UserToken(),
         args: Pagination = Pagination.from_choices(['name', 'id']),
 ) -> PaginationResult[Application.PublicView]:
     return await args.paginate(Application, Application.PublicView)

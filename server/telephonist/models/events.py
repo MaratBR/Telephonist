@@ -18,12 +18,6 @@ class EventSource(str, enum.Enum):
 
 
 @register_model
-class EventData(Document):
-    id: str
-    description: Optional[str] = None
-
-
-@register_model
 class Event(Document):
     source_type: EventSource = EventSource.UNKNOWN
     source_id: Optional[PydanticObjectId]
@@ -70,6 +64,9 @@ class EventMessage(BaseModel):
     data: Optional[Any]
     source_type: EventSource
     source_id: PydanticObjectId
+
+    class Collection:
+        name = 'event_messages'
 
     @classmethod
     def from_event(cls, event: Event):

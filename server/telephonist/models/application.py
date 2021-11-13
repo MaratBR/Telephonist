@@ -65,6 +65,10 @@ class Application(Document, TokenSubjectMixin):
     tags: List[str] = Field(default_factory=list)
     connection_info: List[ConnectionInfo] = Field(default_factory=list)
     event_subscriptions: List[Subscription] = Field(default_factory=list)
+    app_host_id: Optional[PydanticObjectId] = None
+
+    class Collection:
+        name = 'applications'
 
     class PublicView(BaseModel):
         id: PydanticObjectId = Field(alias='_id')

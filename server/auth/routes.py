@@ -1,14 +1,15 @@
 from typing import Optional
 
 import fastapi
-from fastapi import Depends, HTTPException
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import HTTPException, Cookie, Body
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
+from starlette import status
 from starlette.responses import Response
 
-from server.auth.models import User
-from server.auth.utils import CurrentUser, find_user_by_credentials
+from server.auth.models import User, RefreshToken
+from server.auth.utils import CurrentUser, find_user_by_credentials, HybridLoginData, TokenResponse, JWT_REFRESH_COOKIE
+from server.settings import settings
 
 router = fastapi.routing.APIRouter()
 
@@ -35,19 +36,54 @@ async def register_new_user(info: NewUserInfo):
     }
 
 
-class LoginResponse(BaseModel):
-    access_token: str
-    refresh_token: Optional[str]
-    token_type: str = 'bearer'
-
-
-@router.post('/token', response_model=LoginResponse)
-async def login_user(credentials: OAuth2PasswordRequestForm = Depends()):
-    user = await find_user_by_credentials(credentials.username, credentials.password)
+@router.post('/token')
+async def login_user(credentials: HybridLoginData):
+    user = await find_user_by_credentials(credentials.login, credentials.password)
     if user is not None:
-        response = LoginResponse(
-            access_token=user.create_token(scope=set(credentials.scopes)).encode(),
-            refresh_token=user.create_token(token_type='refresh').encode(),
+        db_token, refresh_token = await RefreshToken.create_token(user, settings.refresh_token_lifetime)
+        response = TokenResponse(
+            user.create_token(scope=set(credentials.scope or set())),
+            refresh_token,
+            hybrid=credentials.hybrid,
+            refresh_cookie_path=router.url_path_for('refresh')
         )
         return response
     raise HTTPException(401, 'User with given credentials not found')
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+@router.post('/refresh')
+async def refresh(
+        refresh_cookie: Optional[str] = Cookie(JWT_REFRESH_COOKIE),
+        body: Optional[RefreshRequest] = Body(None),
+):
+    if body is not None:
+        refresh_token = body.refresh_token
+    elif refresh_cookie is not None:
+        refresh_token = refresh_cookie
+    else:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST)
+
+    token = await RefreshToken.find_valid(refresh_token)
+    if token is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED)
+
+    user = await User.get(token.user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED)
+
+    if settings.rotate_refresh_token:
+        await token.delete()
+        refresh_token = (await RefreshToken.create_token(user, settings.refresh_token_lifetime))[1]
+
+    return TokenResponse(
+        user.create_token(),
+        refresh_token if settings.rotate_refresh_token else None,
+        hybrid=refresh_cookie is not None,  # TODO проверить не лучше ли сделать более explicit это все
+        refresh_cookie_path=router.url_path_for('refresh')
+    )
+
+

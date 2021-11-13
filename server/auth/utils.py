@@ -2,20 +2,18 @@ from datetime import timedelta
 from typing import Optional, Type, TypeVar, List, Set, Union
 
 from beanie import Document
-from fastapi import HTTPException, Depends, Header
-from fastapi.openapi.models import SecurityBase
+from fastapi import HTTPException, Depends, Header, Cookie
+from fastapi.openapi.models import HTTPBearer
 from fastapi.security.utils import get_authorization_scheme_param
 from jose import JWTError
-from pydantic import ValidationError
+from pydantic import ValidationError, BaseModel
 from starlette import status
+from starlette.responses import JSONResponse
 
-from server.auth import Scopes
 from server.auth.hash import verify_password
 from server.auth.models import BlockedAccessToken, TokenModel, User, token_subjects_registry
 from server.auth.tokens import decode_token
-
-
-# region Exceptions
+from server.settings import settings
 
 
 class AuthError(HTTPException):
@@ -34,39 +32,65 @@ class UserNotFound(AuthError):
         super(UserNotFound, self).__init__('user not found', status_code=404)
 
 
-# endregion
+JWT_SIGNATURE_COOKIE = 'jwt.sig'
+JWT_REFRESH_COOKIE = 'jwt.refresh'
 
 
-class HybridBearerAuthentication(SecurityBase):
-    def __init__(
-            self,
-            scheme_name: Optional[str] = None,
-            description: Optional[str] = None,
-    ):
-        super().__init__(
-            scheme_name=scheme_name,
-            description=description,
-        )
+class HybridLoginData(BaseModel):
+    login: str
+    password: str
+    hybrid: bool = False
+    scope: List[str]
 
-    async def __call__(self, authorization: Optional[str] = Header(None)) -> Optional[str]:
+
+class TokenResponse(JSONResponse):
+    def __init__(self,
+                 token: TokenModel,
+                 refresh_token: Optional[str],
+                 hybrid: bool,
+                 refresh_cookie_path: Optional[str] = None):
+        if hybrid:
+            token = token.encode()
+            token, signature = token.rsplit('.', 1)
+        else:
+            token = token.encode()
+            signature = None
+
+        if refresh_token:
+            refresh_token = refresh_token.encode()
+        super(TokenResponse, self).__init__({
+            'access_token': token,
+            'refresh_token': None if hybrid else refresh_token,
+            'token_type': 'hybrid-bearer' if hybrid else 'bearer',
+        })
+
+        if hybrid:
+            if refresh_token:
+                self.set_cookie(JWT_REFRESH_COOKIE, refresh_token,
+                                httponly=True, max_age=settings.refresh_token_lifetime.total_seconds())
+
+            self.set_cookie(JWT_SIGNATURE_COOKIE, signature,
+                            httponly=True, max_age=settings.refresh_token_lifetime.total_seconds(),
+                            path=refresh_cookie_path)
+
+
+class HybridBearerSchema(HTTPBearer):
+    async def __call__(self,
+                       jwt_signature: Optional[str] = Cookie(None, alias=JWT_SIGNATURE_COOKIE),
+                       authorization: Optional[str] = Header(None)) -> Optional[str]:
+        if authorization is None:
+            return None
         scheme, param = get_authorization_scheme_param(authorization)
         if not authorization or scheme.lower() != "bearer":
             return None
+
+        if jwt_signature is not None and len(jwt_signature) > 0:
+            return param + '.' + jwt_signature
+
         return param
 
 
-bearer = OAuth2PasswordBearer(
-    tokenUrl='/auth/token',
-    scopes={
-        Scopes.ME: 'Read and modify current user info',
-        Scopes.APP_VIEW: 'View applications info (general info, subscriptions, etc.)',
-        Scopes.APP_CREATE: 'Create new application',
-        Scopes.APP_DELETE: 'Create new application',
-        Scopes.APP_MODIFY: 'Modify applications (edit anything in any application)',
-        Scopes.EVENTS_VIEW: 'View events',
-        Scopes.EVENTS_RAISE: 'Raise a custom event'
-    }
-)
+bearer = HybridBearerSchema()
 
 
 def require_bearer(token: Optional[str] = Depends(bearer)):
@@ -100,10 +124,9 @@ def Token():  # noqa N802
     return Depends(_get_token)
 
 
-def TokenDependency(  # noqa N802
+def get_token_dependency_function(  # noqa N802
         token_type: Optional[Union[str, Set[str]]] = None,
         subject: Optional[Union[str, Type[Document], Set[Union[str, Type[Document]]]]] = None,
-        scope: Optional[Set[str]] = None,
         required: bool = True,
 ):
     if subject:
@@ -117,11 +140,6 @@ def TokenDependency(  # noqa N802
             raise InvalidToken(
                 f'token type "{token.token_type}" is not allowed, '
                 f'only token types that\'re allowed are: {allowed_token_types}')
-
-        if scope and not scope.issubset(token.scope):
-            required_scope = ' '.join(scope)
-            received_scope = ' '.join(token.scope)
-            raise InvalidToken(f'insufficient scope - required: {required_scope}, received: {received_scope}')
 
         if subject and token.sub.type_name not in subject:
             allowed_subject_types = ', '.join(map(lambda v: f'"{v}"', subject))
@@ -138,15 +156,19 @@ def TokenDependency(  # noqa N802
             except InvalidToken:
                 return None
 
-    return Depends(get_token_dependency)
+    return get_token_dependency
 
 
-def UserToken(scope: Optional[Set[str]] = None, required: bool = True):  # noqa
-    return TokenDependency(token_type='access', subject=User, scope=scope, required=required)
+def TokenDependency(  # noqa N802
+        token_type: Optional[Union[str, Set[str]]] = None,
+        subject: Optional[Union[str, Type[Document], Set[Union[str, Type[Document]]]]] = None,
+        required: bool = True,
+):
+    return Depends(get_token_dependency_function(token_type, subject, required))
 
 
-def UserRefreshToken():  # noqa
-    return TokenDependency(token_type='refresh', subject=User)
+def UserToken(required: bool = True):  # noqa
+    return TokenDependency(token_type='access', subject=User, required=required)
 
 
 async def _require_current_user(
