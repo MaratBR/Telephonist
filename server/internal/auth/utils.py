@@ -27,26 +27,25 @@ def decode_token(token: str) -> dict:
     :return: словарь с данными токена
     """
     return jwt.decode(
-        token, settings.jwt_secret,
+        token,
+        settings.jwt_secret,
         issuer=settings.jwt_issuer,
         algorithms=[jwt.ALGORITHMS.HS256],
-        options={
-            'require_sub': True
-        }
+        options={"require_sub": True},
     )
 
 
 def encode_token(data: dict):
-    return jwt.encode({
-        **data,
-        'iss': settings.jwt_issuer
-    }, settings.jwt_secret,)
+    return jwt.encode(
+        {**data, "iss": settings.jwt_issuer},
+        settings.jwt_secret,
+    )
 
 
 def create_static_key(length: int = 20, token_type: Optional[str] = None):
     tok = secrets.token_urlsafe(length)
     if token_type is not None:
-        tok = token_type + '.' + tok
+        tok = token_type + "." + tok
     return tok
 
 
@@ -55,4 +54,3 @@ def static_key_factory(length: int = 12, key_type: Optional[str] = None):
         return create_static_key(length, key_type)
 
     return _token_factory_function
-

@@ -7,17 +7,18 @@ from contextlib import asynccontextmanager
 from typing import *
 
 import aioredis
+from loguru import logger
 
 
 def encode_broadcast_message(data: Any) -> str:
-    return base64.b85encode(pickle.dumps(data)).decode('ascii')
+    return base64.b85encode(pickle.dumps(data)).decode("ascii")
 
 
 def decode_broadcast_message(string: str) -> Any:
     try:
         return pickle.loads(base64.b85decode(string))
     except:
-        raise ValueError('Failed to decode broadcast message')
+        raise ValueError("Failed to decode broadcast message")
 
 
 class Subscription:
@@ -41,7 +42,9 @@ class BackplaneBase(ABC):
         ...
 
     @abstractmethod
-    def subscribe(self, channel: str, *channels: str) -> AsyncContextManager[AsyncIterable[Any]]:
+    def subscribe(
+        self, channel: str, *channels: str
+    ) -> AsyncContextManager[AsyncIterable[Any]]:
         ...
 
     @abstractmethod
@@ -77,19 +80,19 @@ class Backplane(BackplaneBase):
     async def _receiver_loop(self):
         try:
             async for message in self._pubsub.listen():
-                if message is None or message['type'] != 'message':
+                if message is None or message["type"] != "message":
                     continue
                 try:
-                    data = decode_broadcast_message(message['data'])
+                    data = decode_broadcast_message(message["data"])
                 except Exception as exc:
                     continue  # TODO
 
-                await self._dispatch_message(message['channel'].decode(), data)
+                await self._dispatch_message(message["channel"].decode(), data)
         except asyncio.CancelledError:
             pass
         except Exception as exc:
-            print(exc)
-        print('done')
+            logger.exception(exc)
+        logger.debug("Receiver loop has completed execution")
 
     @asynccontextmanager
     async def subscribe(self, channel: str, *channels):
@@ -131,7 +134,7 @@ class Backplane(BackplaneBase):
                 if inspect.isawaitable(v):
                     await v
             except Exception as exc:
-                print(exc)
+                logger.exception(exc)
 
     async def _subscribe(self, channel: str):
         await self._pubsub.subscribe(channel)
@@ -154,7 +157,7 @@ async def start_backplane(redis_url: str):
 
 async def stop_backplane():
     global _backplane
-    await _backplane.stop() # noqa
+    await _backplane.stop()  # noqa
     _backplane = None
 
 

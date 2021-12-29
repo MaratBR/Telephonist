@@ -4,17 +4,18 @@ from collections import namedtuple
 from typing import *
 
 from fastapi import APIRouter
-from pydantic import BaseModel, parse_obj_as, ValidationError
+from loguru import logger
+from pydantic import BaseModel, ValidationError, parse_obj_as
 from pydantic.typing import is_classvar
 from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 
 from server.internal.channels.layer import ChannelLayer, Connection, get_channel_layer
 
-WS_CBV_KEY = '__ws_cbv_class__'
-WS_CBV_CALL_NAME = '__ws_cbv_call__'
-WS_CBV_MESSAGE_HANDLER = '__ws_cbv_message__'
-HubHandlerMeta = namedtuple('HubHandlerMeta', ('msg_type', 'typehint'))
-HubHandlerCache = namedtuple('HubHandlerCache', ('method_name', 'typehint'))
+WS_CBV_KEY = "__ws_cbv_class__"
+WS_CBV_CALL_NAME = "__ws_cbv_call__"
+WS_CBV_MESSAGE_HANDLER = "__ws_cbv_message__"
+HubHandlerMeta = namedtuple("HubHandlerMeta", ("msg_type", "typehint"))
+HubHandlerCache = namedtuple("HubHandlerCache", ("method_name", "typehint"))
 
 
 class HubException(Exception):
@@ -36,40 +37,51 @@ def ws_controller(router: APIRouter, path: str, name: Optional[str] = None):
     def decorator(cls):
         add_ws_controller(cls, router, path, name)
         return cls
+
     return decorator
 
 
-def add_ws_controller(cls: Type['Hub'], router: APIRouter, path: str, name: Optional[str] = None):
+def add_ws_controller(
+    cls: Type["Hub"], router: APIRouter, path: str, name: Optional[str] = None
+):
     _init_ws_cbv(cls)
     caller = getattr(cls, WS_CBV_CALL_NAME)
-    router.add_api_websocket_route(path, caller, name=name)
+    router.add_api_websocket_route(router.prefix + path, caller, name=name)
 
 
 def bind_message(msg_type: Optional[str] = None):
     if msg_type is not None and not isinstance(msg_type, str):
-        raise TypeError('msg_type must be a string or None')
+        raise TypeError("msg_type must be a string or None")
 
     def decorator(fn):
         nonlocal msg_type
         if msg_type is None:
-            if fn.__name__.startswith('on_'):
+            if fn.__name__.startswith("on_"):
                 msg_type = fn.__name__[3:]
             else:
                 msg_type = fn.__name__
         sig = inspect.signature(fn)
         params = sig.parameters.copy()
-        if 'self' in params:
-            del params['self']
-        message_params = [p for p in params.values() if p.default is inspect.Parameter.empty]
+        if "self" in params:
+            del params["self"]
+        message_params = [
+            p for p in params.values() if p.default is inspect.Parameter.empty
+        ]
         if len(message_params) > 1:
             raise TypeError(
-                'Invalid message handler signature - only one or zero parameters without default value allowed')
+                "Invalid message handler signature - only one or zero parameters without default value allowed"
+            )
         if len(message_params) == 0:
             typehint = None
         else:
             typehint = message_params[0].annotation or Any
-        setattr(fn, WS_CBV_MESSAGE_HANDLER, HubHandlerMeta(msg_type=msg_type, typehint=typehint))
+        setattr(
+            fn,
+            WS_CBV_MESSAGE_HANDLER,
+            HubHandlerMeta(msg_type=msg_type, typehint=typehint),
+        )
         return fn
+
     return decorator
 
 
@@ -97,11 +109,15 @@ class Hub:
         self._connection = None
 
     def __init_subclass__(cls, **kwargs):
-        methods = inspect.getmembers(cls, lambda m: inspect.isfunction(m) and hasattr(m, WS_CBV_MESSAGE_HANDLER))
+        methods = inspect.getmembers(
+            cls, lambda m: inspect.isfunction(m) and hasattr(m, WS_CBV_MESSAGE_HANDLER)
+        )
         handlers = {}
         for method_name, method in methods:
             meta: HubHandlerMeta = getattr(method, WS_CBV_MESSAGE_HANDLER)
-            handlers[meta.msg_type] = HubHandlerCache(typehint=meta.typehint, method_name=method_name)
+            handlers[meta.msg_type] = HubHandlerCache(
+                typehint=meta.typehint, method_name=method_name
+            )
         cls._static_handlers = handlers
 
     async def on_exception(self, exception: Exception):
@@ -109,7 +125,7 @@ class Hub:
         Метод, вызываемый при возникновении неожиданного исключения.
         :param exception:
         """
-        await self.send_error(exception, kind='internal')
+        await self.send_error(exception, kind="internal")
 
     async def read_message(self) -> dict:
         try:
@@ -120,17 +136,23 @@ class Hub:
             raise
 
         try:
-            assert isinstance(json_obj, dict), 'Received message must be a JSON object'
-            assert 'msg_type' in json_obj and 'data' in json_obj,\
-                'Message object does not contain "data" and "msg_type" keys'
-            assert isinstance(json_obj['msg_type'], str), 'Raw message\'s "type" is not a string'
-            return {'msg_type': json_obj['msg_type'], 'data': json_obj['data']}
+            assert isinstance(json_obj, dict), "Received message must be a JSON object"
+            assert (
+                "msg_type" in json_obj and "data" in json_obj
+            ), 'Message object does not contain "data" and "msg_type" keys'
+            assert isinstance(
+                json_obj["msg_type"], str
+            ), 'Raw message\'s "type" is not a string'
+            return {"msg_type": json_obj["msg_type"], "data": json_obj["data"]}
         except AssertionError as exc:
             raise InvalidMessageException(str(exc))
 
     async def send_message(self, msg_type: str, data: Any):
         message = HubMessage(msg_type=msg_type, data=data)
         await self.websocket.send_text(message.json())
+        logger.debug(
+            f"sent to {self.websocket.client.host}:{self.websocket.client.port} > {message.json()}"
+        )
 
     async def send_error(self, error: Any, kind: Optional[str] = None):
         """
@@ -140,16 +162,13 @@ class Hub:
         """
         if isinstance(error, Exception):
             error_object = {
-                'error_type': '500',
-                'exception': type(error).__name__,
-                'error': str(error)
+                "error_type": "500",
+                "exception": type(error).__name__,
+                "error": str(error),
             }
         else:
-            error_object = {
-                'error_type': 'custom',
-                'error': error
-            }
-        await self.send_message('error', error_object)
+            error_object = {"error_type": kind or "custom", "error": error}
+        await self.send_message("error", error_object)
 
     async def authenticate(self):
         pass
@@ -167,7 +186,9 @@ class Hub:
 
         try:
             await self.authenticate()
-        except HubAuthenticationException:
+        except HubAuthenticationException as exc:
+            await self.websocket.accept()
+            await self.send_error(str(exc), "authentication_failed")
             await self.websocket.close()
             return
 
@@ -194,10 +215,10 @@ class Hub:
     async def _external_messages_loop(self):
         try:
             async for message in self._connection.queued_messages():
-                if message['msg_type'] == '__disconnect__':
+                if message["msg_type"] == "__disconnect__":
                     await self.websocket.close()
                 else:
-                    await self.send_message(message['msg_type'], message['data'])
+                    await self.send_message(message["msg_type"], message["data"])
         except asyncio.CancelledError:
             pass
 
@@ -219,13 +240,13 @@ class Hub:
 
         :param message: message with keys - "msg_type" and "message"
         """
-        handler = self._local_handlers.get(message['msg_type'])
+        handler = self._local_handlers.get(message["msg_type"])
         if handler:
             method = getattr(self, handler.method_name)
-            message_data = message['data']
+            message_data = message["data"]
             if handler.typehint is not Any:
                 try:
-                    message_data = parse_obj_as(handler.typehint, message['data'])
+                    message_data = parse_obj_as(handler.typehint, message["data"])
                 except ValidationError as exc:
                     await self.send_error(exc)
             try:
@@ -241,7 +262,7 @@ async def _call_method(method, *args, **kwargs):
     return v
 
 
-def _init_ws_cbv(cls: Type['Hub']):
+def _init_ws_cbv(cls: Type["Hub"]):
     if getattr(cls, WS_CBV_KEY, False):
         return  # already initialized
 
@@ -249,18 +270,22 @@ def _init_ws_cbv(cls: Type['Hub']):
     signature = inspect.signature(init)
     parameters = list(signature.parameters.values())[1:]  # drop `self` parameter
     call_parameters = [
-        x for x in parameters
-        if x.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+        x
+        for x in parameters
+        if x.kind
+        not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
     ]
     dependency_names: List[str] = []
     for name, hint in get_type_hints(cls).items():
-        if is_classvar(hint) or name.startswith('_'):
+        if is_classvar(hint) or name.startswith("_"):
             continue
         call_parameters.append(
-            inspect.Parameter(name=name,
-                              kind=inspect.Parameter.KEYWORD_ONLY,
-                              annotation=hint,
-                              default=getattr(cls, name, Ellipsis))
+            inspect.Parameter(
+                name=name,
+                kind=inspect.Parameter.KEYWORD_ONLY,
+                annotation=hint,
+                default=getattr(cls, name, Ellipsis),
+            )
         )
         dependency_names.append(name)
     call_signature = signature.replace(parameters=call_parameters)
@@ -269,10 +294,10 @@ def _init_ws_cbv(cls: Type['Hub']):
         fields = {}
         for dep in dependency_names:
             fields[dep] = kwargs.pop(dep)
-        hub = cls(*args, **kwargs) # noqa
+        hub = cls(*args, **kwargs)  # noqa
         for dep in dependency_names:
             setattr(hub, dep, fields[dep])
-        await hub._run() # noqa
+        await hub._run()  # noqa
 
     setattr(ws_cbv_call, "__signature__", call_signature)
     setattr(cls, WS_CBV_CALL_NAME, staticmethod(ws_cbv_call))

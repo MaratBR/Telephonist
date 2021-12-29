@@ -1,2 +1,2 @@
 from .misc import *
-from .simplepagination import *
+from .pagination import *

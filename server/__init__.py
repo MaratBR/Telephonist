@@ -1,1 +1,3 @@
-from .app import app
+from .version import VERSION
+
+__version__ = VERSION

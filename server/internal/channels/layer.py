@@ -1,15 +1,16 @@
 import asyncio
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
-from datetime import timedelta, datetime
+from datetime import datetime, timedelta
 from typing import *
 
 import nanoid
+from loguru import logger
 from pydantic import BaseModel
 
 from server.internal.channels.backplane import BackplaneBase, get_default_backplane
 
-CHANNEL_LAYER_PREFIX = 'CL'
+CHANNEL_LAYER_PREFIX = "CL"
 
 
 class HubError(Exception):
@@ -44,7 +45,9 @@ class Connection(HubProxy):
         # TODO проверить на race condition
         if self._active:
             for g in self._groups:
-                await self._backplane.detach_listener(CHANNEL_LAYER_PREFIX + g, self._queue.put)
+                await self._backplane.detach_listener(
+                    CHANNEL_LAYER_PREFIX + g, self._queue.put
+                )
         self._groups.clear()
 
     async def add_to_group(self, group: str):
@@ -52,32 +55,42 @@ class Connection(HubProxy):
             return
         self._groups.add(group)
         if self._active:
-            await self._backplane.attach_listener(CHANNEL_LAYER_PREFIX + group, self._queue.put)
+            await self._backplane.attach_listener(
+                CHANNEL_LAYER_PREFIX + group, self._queue.put
+            )
 
     async def remove_from_group(self, group: str):
         if group not in self._groups:
             return
         self._groups.remove(group)
         if self._active:
-            await self._backplane.detach_listener(CHANNEL_LAYER_PREFIX + group, self._queue.put)
+            await self._backplane.detach_listener(
+                CHANNEL_LAYER_PREFIX + group, self._queue.put
+            )
 
     async def __aenter__(self):
-        assert not self._active, 'Connection cannot be activated if it\'s already active'
+        assert not self._active, "Connection cannot be activated if it's already active"
         self._active = True
         for group in self._groups:
-            await self._backplane.attach_listener(CHANNEL_LAYER_PREFIX + group, self._queue.put)
+            await self._backplane.attach_listener(
+                CHANNEL_LAYER_PREFIX + group, self._queue.put
+            )
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        assert self._active, 'Connection cannot be deactivate when it\'s already deactivated'
+        assert (
+            self._active
+        ), "Connection cannot be deactivate when it's already deactivated"
         self._active = False
         for group in self._groups:
-            await self._backplane.detach_listener(CHANNEL_LAYER_PREFIX + group, self._queue.put)
+            await self._backplane.detach_listener(
+                CHANNEL_LAYER_PREFIX + group, self._queue.put
+            )
 
     def _send(self, msg_type: str, message: Any) -> Awaitable[None]:
-        return self._queue.put({'msg_type': msg_type, 'data': message})
+        return self._queue.put({"msg_type": msg_type, "data": message})
 
     async def queued_messages(self) -> AsyncIterable[dict]:
-        assert self._active, 'Connection is not active'
+        assert self._active, "Connection is not active"
         while True:
             message = await self._queue.get()
             if message is None:
@@ -86,9 +99,7 @@ class Connection(HubProxy):
 
 
 class ChannelLayer:
-    def __init__(self,
-                 keep_alive_timeout: timedelta,
-                 backplane: BackplaneBase):
+    def __init__(self, keep_alive_timeout: timedelta, backplane: BackplaneBase):
         if keep_alive_timeout.total_seconds() == 0:
             raise ValueError("Keep-alive timeout cannot be zero")
         self._backplane = backplane
@@ -113,27 +124,29 @@ class ChannelLayer:
 
     def __raise_if_not_initialized(self):
         if not self._initialized:
-            raise RuntimeError('Channel layer is not initialized yet')
+            raise RuntimeError("Channel layer is not initialized yet")
 
     async def _internal_messages(self):
         try:
-            async with self._backplane.subscribe('__internal', '__internal:' + self._id) as sub:
+            async with self._backplane.subscribe(
+                "__internal", "__internal:" + self._id
+            ) as sub:
                 async for message in sub:
                     await self._handle_internal_message(message)
         except asyncio.CancelledError:
             pass
 
     async def _handle_internal_message(self, message: dict):
-        print(message)
-        data = message['data']
-        msg_type = message['msg_type']
-        if msg_type == 'disconnect_connection':
-            connection_id = data.get('connection_id')
-            print('received', connection_id)
+        logger.debug("received a message {}", message)
+        data = message["data"]
+        msg_type = message["msg_type"]
+        if msg_type == "disconnect_connection":
+            connection_id = data.get("connection_id")
             if connection_id in self._connections:
-                await self._connections[connection_id].send('__disconnect__', None)
+                await self._connections[connection_id].send("__disconnect__", None)
 
     if TYPE_CHECKING:
+
         def new_connection(self) -> AsyncContextManager[Connection]:
             ...
 
@@ -148,24 +161,34 @@ class ChannelLayer:
         finally:
             del self._connections[connection.id]
 
+    async def close_group_connections(self, group_name: str):
+        await self.group_send(group_name, "__disconnect__", None)
+
     async def close_connection(self, connection_id: str):
         layer_id, connection_id = self._parse_id(connection_id)
         if layer_id == self._id:
             if connection_id in self._connections:
-                await self._connections[connection_id].send('__disconnect__', None)
+                await self._connections[connection_id].send("__disconnect__", None)
         else:
             await self._backplane.publish(
-                '__internal:' + layer_id,
-                {'msg_type': 'disconnect_connection', 'data': {'connection_id': connection_id}})
+                "__internal:" + layer_id,
+                {
+                    "msg_type": "disconnect_connection",
+                    "data": {"connection_id": connection_id},
+                },
+            )
 
     def group_send(self, group: str, msg_type: str, data: Any):
         return self.groups_send([group], msg_type, data)
 
     async def groups_send(self, groups: List[str], msg_type: str, data: Any):
-        await self._backplane.publish_many([CHANNEL_LAYER_PREFIX + g for g in groups], {'msg_type': msg_type, 'data': data})
+        await self._backplane.publish_many(
+            [CHANNEL_LAYER_PREFIX + g for g in groups],
+            {"msg_type": msg_type, "data": data},
+        )
 
     def _parse_id(self, connection_id: str):
-        parts = connection_id.split('.', 1)
+        parts = connection_id.split(".", 1)
         if len(parts) == 1:
             return self._id, parts[0]
         return parts

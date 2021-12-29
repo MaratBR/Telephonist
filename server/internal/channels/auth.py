@@ -1,6 +1,6 @@
-from typing import Optional, Callable, Awaitable
+from typing import Awaitable, Callable, Optional
 
-from fastapi import Query, Depends
+from fastapi import Depends, Query
 from starlette.websockets import WebSocket, WebSocketState
 
 from server.internal.auth.dependencies import parse_jwt_token
@@ -8,16 +8,16 @@ from server.internal.auth.dependencies import parse_jwt_token
 NoTokenHandler = Callable[[WebSocket, Exception], Awaitable[None]]
 
 
-def get_ws_ticket_dependency_function(
-        required: bool,
-        no_token_handler: NoTokenHandler
-):
-
-    async def dependency_function(websocket: WebSocket, ticket: Optional[str] = Query(None)):
+def get_ws_ticket_dependency_function(required: bool, no_token_handler: NoTokenHandler):
+    async def dependency_function(
+        websocket: WebSocket, ticket: Optional[str] = Query(None)
+    ):
         try:
-            assert ticket is not None, 'ticket is not set'
+            assert ticket is not None, "ticket is not set"
             token = parse_jwt_token(ticket)
-            assert token.token_type == 'ws-ticket', 'invalid token type: ' + token.token_type
+            assert token.token_type == "ws-ticket", (
+                "invalid token type: " + token.token_type
+            )
             return token
         except Exception as e:
             if required:
@@ -35,15 +35,11 @@ async def _default_no_token_handler(ws: WebSocket, _exc: Exception):
         await ws.close(1000)
 
 
-def WsTicket( # noqa
-        required: bool = True,
-        no_token_handler: Optional[NoTokenHandler] = None
+def WsTicket(  # noqa
+    required: bool = True, no_token_handler: Optional[NoTokenHandler] = None
 ):
     return Depends(
         get_ws_ticket_dependency_function(
-            required,
-            no_token_handler or _default_no_token_handler
+            required, no_token_handler or _default_no_token_handler
         )
     )
-
-

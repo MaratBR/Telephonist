@@ -1,5 +1,5 @@
 from .application import *
-from .application_host import *
+from .application_settings import *
 from .events import *
 from .log import *
 from .security_code import *

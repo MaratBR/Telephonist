@@ -3,21 +3,25 @@ from datetime import timedelta
 from typing import Optional
 
 import fastapi
-from fastapi import HTTPException, Body, Header
+from fastapi import Body, Header, HTTPException
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
 from starlette import status
 from starlette.requests import Request
 
 from server.internal.auth.dependencies import CurrentUser, UserToken
-from server.internal.auth.schema import HybridLoginData, TokenResponse, JWT_REFRESH_COOKIE
-from server.models.auth import User, RefreshToken, TokenModel
+from server.internal.auth.schema import (
+    JWT_REFRESH_COOKIE,
+    HybridLoginData,
+    TokenResponse,
+)
+from server.models.auth import RefreshToken, TokenModel, User, UserView
 from server.settings import settings
 
-router = fastapi.routing.APIRouter(tags=['auth'], prefix='/auth')
+auth_router = fastapi.routing.APIRouter(tags=["auth"], prefix="/auth")
 
 
-@router.get('/user', response_model=User.UserView)
+@auth_router.get("/user", response_model=UserView)
 async def get_user(user: User = CurrentUser(required=True)):
     return user
 
@@ -27,63 +31,79 @@ class NewUserInfo(BaseModel):
     password: str
 
 
-@router.post('/register')
+@auth_router.post("/register")
 async def register_new_user(info: NewUserInfo, host: Optional[str] = Header(None)):
-    if settings.user_registration_unix_socket_only and host != settings.unix_socket_name:
-        raise HTTPException(403, 'User registration is only allowed through unix socket')
+    if (
+        settings.user_registration_unix_socket_only
+        and host != settings.unix_socket_name
+    ):
+        raise HTTPException(
+            403, "User registration is only allowed through unix socket"
+        )
     try:
         await User.create_user(info.username, info.password)
     except DuplicateKeyError:
-        raise HTTPException(409, 'User with given username already exists')
-    return {'detail': "New user registered successfully"}
+        raise HTTPException(409, "User with given username already exists")
+    return {"detail": "New user registered successfully"}
 
 
 class NewPassword(BaseModel):
     password: str
 
 
-@router.post('/set-password')
-async def set_password(body: NewPassword, token: TokenModel = UserToken(token_type='password-reset')):
+@auth_router.post("/set-password")
+async def set_password(
+    body: NewPassword, token: TokenModel = UserToken(token_type="password-reset")
+):
     user = await User.get(token.sub)
-    if user is None or (user.last_password_changed is not None and user.last_password_changed > token.issued_at):
-        raise HTTPException(401, 'user not found or token is no longer valid for the user')
+    if user is None or (
+        user.last_password_changed is not None
+        and user.last_password_changed > token.issued_at
+    ):
+        raise HTTPException(
+            401, "user not found or token is no longer valid for the user"
+        )
 
     if len(body.password) == 0:
-        raise HTTPException(400, 'password cannot be empty')
+        raise HTTPException(400, "password cannot be empty")
     user.set_password(body.password)
     await user.save_changes()
-    return {'detail': 'Password changed successfully'}
+    return {"detail": "Password changed successfully"}
 
 
-@router.post('/token')
+@auth_router.post("/token")
 async def login_user(credentials: HybridLoginData, request: Request):
-    user = await find_user_by_credentials(credentials.login, credentials.password)
+    user = await User.find_user_by_credentials(credentials.login, credentials.password)
     if user is not None:
         if user.password_reset_required:
-            password_token = user.create_token(token_type='password-reset', lifetime=timedelta(minutes=15))
+            password_token = user.create_token(
+                token_type="password-reset", lifetime=timedelta(minutes=15)
+            )
             response = TokenResponse(None, None, password_reset_token=password_token)
         else:
-            db_token, refresh_token = await RefreshToken.create_token(user, settings.refresh_token_lifetime)
-            check_string = secrets.token_urlsafe(10)
+            db_token, refresh_token = await RefreshToken.create_token(
+                user, settings.refresh_token_lifetime
+            )
+            check_string = secrets.token_urlsafe(10) if credentials.hybrid else None
             response = TokenResponse(
                 user.create_token(check_string=check_string),
                 refresh_token,
-                refresh_cookie_path=request.scope['router'].url_path_for('refresh'),
+                refresh_cookie_path=request.scope["router"].url_path_for("refresh"),
                 refresh_as_cookie=credentials.hybrid,
-                check_string=check_string
+                check_string=check_string,
             )
         return response
-    raise HTTPException(401, 'User with given credentials not found')
+    raise HTTPException(401, "User with given credentials not found")
 
 
 class RefreshRequest(BaseModel):
     refresh_token: str
 
 
-@router.post('/refresh')
+@auth_router.post("/refresh")
 async def refresh(
-        request: Request,
-        body: Optional[RefreshRequest] = Body(None),
+    request: Request,
+    body: Optional[RefreshRequest] = Body(None),
 ):
     refresh_cookie = request.cookies.get(JWT_REFRESH_COOKIE)
     if body is not None:
@@ -103,12 +123,12 @@ async def refresh(
 
     if settings.rotate_refresh_token:
         await token.delete()
-        refresh_token = (await RefreshToken.create_token(user, settings.refresh_token_lifetime))[1]
+        refresh_token = (
+            await RefreshToken.create_token(user, settings.refresh_token_lifetime)
+        )[1]
 
     return TokenResponse(
         user.create_token(),
         refresh_token if settings.rotate_refresh_token else None,
-        refresh_cookie_path=request.scope['router'].url_path_for('refresh')
+        refresh_cookie_path=request.scope["router"].url_path_for("refresh"),
     )
-
-
