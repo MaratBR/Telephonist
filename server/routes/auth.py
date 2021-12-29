@@ -53,7 +53,8 @@ class NewPassword(BaseModel):
 
 @auth_router.post("/set-password")
 async def set_password(
-    body: NewPassword, token: TokenModel = UserToken(token_type="password-reset")
+    body: NewPassword,
+    token: TokenModel = UserToken(token_type="password-reset"),
 ):
     user = await User.get(token.sub)
     if user is None or (

@@ -3,17 +3,7 @@ import math
 import time
 import warnings
 from enum import Enum
-from typing import (
-    Any,
-    Dict,
-    Generic,
-    List,
-    Optional,
-    Set,
-    Type,
-    TypeVar,
-    Union,
-)
+from typing import Any, Dict, Generic, List, Optional, Set, Type, TypeVar, Union
 
 from beanie import Document
 from beanie.odm.enums import SortDirection

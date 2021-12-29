@@ -156,7 +156,9 @@ class SentEventTrace(Document):
         from_app: Optional[PydanticObjectId],
     ):
         await cls.find(
-            cls.to_app == to_app, cls.event_type == event_type, cls.from_app == from_app
+            cls.to_app == to_app,
+            cls.event_type == event_type,
+            cls.from_app == from_app,
         ).upsert(
             SetOp({cls.last_event: datetime.now()}),
             Inc(cls.count),

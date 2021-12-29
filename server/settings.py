@@ -13,7 +13,10 @@ class Settings(BaseSettings):
     redis_url: Optional[str] = "redis://127.0.0.1:6379"
     db_url: str = "mongodb://localhost:27017"
     is_testing: bool = False
-    cors_origin: List[str] = ["http://localhost:1234", "https://localhost:1234"]
+    cors_origin: List[str] = [
+        "http://localhost:1234",
+        "https://localhost:1234",
+    ]
     default_username: str = "admin"
     default_password: str = "admin"
     create_default_user: bool = True

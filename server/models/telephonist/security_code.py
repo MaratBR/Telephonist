@@ -71,7 +71,8 @@ class OneTimeSecurityCode(Document):
         cls, code_type: str, code: str
     ) -> Awaitable["OneTimeSecurityCode"]:
         return cls.find_one(
-            {"_id": code, "code_type": code_type}, cls.expires_at > datetime.now()
+            {"_id": code, "code_type": code_type},
+            cls.expires_at > datetime.now(),
         )
 
     @classmethod

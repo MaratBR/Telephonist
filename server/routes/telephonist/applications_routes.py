@@ -82,7 +82,8 @@ async def get_applications(
 async def create_application(_=UserToken(), body: CreateApplication = Body(...)):
     if await Application.find(Application.name == body.name).exists():
         raise HTTPException(
-            status.HTTP_409_CONFLICT, "Application with given name already exists"
+            status.HTTP_409_CONFLICT,
+            "Application with given name already exists",
         )
     app = Application(
         name=body.name,

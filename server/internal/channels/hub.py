@@ -110,7 +110,8 @@ class Hub:
 
     def __init_subclass__(cls, **kwargs):
         methods = inspect.getmembers(
-            cls, lambda m: inspect.isfunction(m) and hasattr(m, WS_CBV_MESSAGE_HANDLER)
+            cls,
+            lambda m: inspect.isfunction(m) and hasattr(m, WS_CBV_MESSAGE_HANDLER),
         )
         handlers = {}
         for method_name, method in methods:
@@ -273,7 +274,10 @@ def _init_ws_cbv(cls: Type["Hub"]):
         x
         for x in parameters
         if x.kind
-        not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+        not in (
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        )
     ]
     dependency_names: List[str] = []
     for name, hint in get_type_hints(cls).items():

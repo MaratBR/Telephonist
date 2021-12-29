@@ -45,7 +45,11 @@ class AppLog(Document):
         meta: Optional[Any],
     ):
         await cls(
-            app_id=app_id, type=log_type, severity=severity, meta=meta, body=body
+            app_id=app_id,
+            type=log_type,
+            severity=severity,
+            meta=meta,
+            body=body,
         ).save()
 
     @classmethod
