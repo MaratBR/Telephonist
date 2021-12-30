@@ -25,9 +25,14 @@ class Server(Document):
         name = "servers"
 
     @classmethod
-    async def report_server(cls, ip: Union[str, Address]):
+    async def report_server(cls, ip: Union[str, Address], os: Optional[str] = None):
         if isinstance(ip, Address):
             ip = ip.host
-        ip = ip.lower()  # на всякий случай, если IPv6
-        if not await cls.find_one(cls.ip == ip).exists():
-            await cls(ip=ip).save()
+        ip = ip.lower()
+        server = await cls.find_one(cls.ip == ip)
+        if server is None:
+            await cls(ip=ip, os=os).save()
+        else:
+            server.last_seen = datetime.now()
+            server.os = os
+            await server.replace()

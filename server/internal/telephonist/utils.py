@@ -41,3 +41,7 @@ class ChannelGroups:
     @classmethod
     def app_events(cls, app_id: Union[str, PydanticObjectId]):
         return cls.APPS + "." + str(app_id) + ".events"
+
+    @classmethod
+    def app_updates(cls, app_id: Union[str, PydanticObjectId]):
+        return cls.APPS + "." + str(app_id) + ".updates"

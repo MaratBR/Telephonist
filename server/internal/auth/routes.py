@@ -25,9 +25,7 @@ def _authorize(fn, annotation):
         # TODO warning?
         return fn
     parameters.append(
-        inspect.Parameter(
-            "__token__", inspect.Parameter.KEYWORD_ONLY, annotation=annotation
-        )
+        inspect.Parameter("__token__", inspect.Parameter.KEYWORD_ONLY, annotation=annotation)
     )
     signature = signature.replace(parameters=parameters)
     setattr(new_route_function, "__signature__", signature)

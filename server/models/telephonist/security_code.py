@@ -67,9 +67,7 @@ class OneTimeSecurityCode(Document):
         ).exists()
 
     @classmethod
-    def get_valid_code(
-        cls, code_type: str, code: str
-    ) -> Awaitable["OneTimeSecurityCode"]:
+    def get_valid_code(cls, code_type: str, code: str) -> Awaitable["OneTimeSecurityCode"]:
         return cls.find_one(
             {"_id": code, "code_type": code_type},
             cls.expires_at > datetime.now(),
@@ -81,8 +79,4 @@ class OneTimeSecurityCode(Document):
 
     class Collection:
         name = "onetime_security_codes"
-        indexes = [
-            pymongo.IndexModel(
-                "expires_at", name="expires_at_ttl", expireAfterSeconds=60
-            )
-        ]
+        indexes = [pymongo.IndexModel("expires_at", name="expires_at_ttl", expireAfterSeconds=60)]

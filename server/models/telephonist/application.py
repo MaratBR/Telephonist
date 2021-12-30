@@ -7,11 +7,13 @@ import pymongo
 from beanie import Document, Indexed, PydanticObjectId
 from beanie.operators import Inc
 from beanie.operators import Set as SetOp
+from loguru import logger
 from pydantic import BaseModel, Field
 
 from server.database import register_model
 from server.internal.auth.utils import static_key_factory
 from server.models.common import IdProjection
+from server.settings import settings
 
 
 class ProcessType(str, enum.Enum):
@@ -41,21 +43,38 @@ class ConnectionInfo(Document):
     disconnected_at: Optional[datetime]
     expires_at: Optional[datetime]
     client_name: Optional[str]
+    software_version: Optional[str]
     app_id: PydanticObjectId
+    os: str
     is_connected: bool = False
     event_subscriptions: List[str] = Field(default_factory=list)
     processes: List[ProcessEntry] = Field(default_factory=list)
+    connection_state_fingerprint: str
+
+    @classmethod
+    async def on_database_ready(cls):
+        query = ConnectionInfo.find({"is_connected": True})
+        hanging_connections = await query.count()
+        if hanging_connections > 0:
+            logger.warning(
+                "There's {count} hanging connections in the database, this means that either"
+                " there's more than 1 instance of Telephonist running with this database or"
+                " Telephonist exited unexpectedly",
+                count=hanging_connections,
+            )
+            if settings.hanging_connections_policy == "remove":
+                logger.warning(
+                    'settings.hanging_connections_policy is set to "remove", all hanging'
+                    " connections will be removed"
+                )
+                await query.delete()
 
     class Settings:
         use_state_management = True
         use_revision = True
 
     class Collection:
-        indexes = [
-            pymongo.IndexModel(
-                "expires_at", name="expires_at_ttl", expireAfterSeconds=1
-            )
-        ]
+        indexes = [pymongo.IndexModel("expires_at", name="expires_at_ttl", expireAfterSeconds=1)]
 
 
 @register_model
@@ -66,6 +85,7 @@ class Application(Document):
     settings: Optional[Any]
     settings_type: Optional[str]
     settings_schema: Optional[Any]
+    settings_revision: Optional[int]
     tags: List[str] = Field(default_factory=list)
     access_key: str = Field(default_factory=static_key_factory(key_type="application"))
 
@@ -81,9 +101,7 @@ class Application(Document):
 
     async def remove_subscription(self, event_type: str):
         try:
-            sub = next(
-                sub for sub in self.event_subscriptions if sub.event_type == event_type
-            )
+            sub = next(sub for sub in self.event_subscriptions if sub.event_type == event_type)
         except StopIteration:
             return
         self.event_subscriptions.remove(sub)

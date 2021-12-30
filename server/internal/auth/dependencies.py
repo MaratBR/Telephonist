@@ -29,7 +29,8 @@ def _require_jwt_token(
             or token.check_string != hashlib.sha256(check_string.encode()).hexdigest()
         ):
             raise InvalidToken(
-                f'jwt token check string is invalid or check string cookie ("{JWT_CHECK_HASH_COOKIE}) is missing'
+                "jwt token check string is invalid or check string cookie"
+                f' ("{JWT_CHECK_HASH_COOKIE}) is missing'
             )
     return token
 
@@ -66,9 +67,7 @@ def get_token_dependency_function(  # noqa N802
     if isinstance(token_type, str) and token_type in (None, "access"):
         token_type: Set[str] = {token_type}
 
-    async def get_token_dependency(
-        request: Request, token: TokenModel = Token(required=required)
-    ):
+    async def get_token_dependency(request: Request, token: TokenModel = Token(required=required)):
         if token_type and token.token_type not in token_type:
             allowed_token_types = ", ".join(map(lambda v: f'"{v}"', token_type))
             raise InvalidToken(
@@ -129,9 +128,7 @@ class ResourceKey(BaseModel):
     resource_key: str
 
     @classmethod
-    def Depends(
-        cls, *resource_types: str, required: bool = True
-    ) -> "ResourceKey":  # noqa
+    def Depends(cls, *resource_types: str, required: bool = True) -> "ResourceKey":  # noqa
         if "*" in resource_types:
             resource_types = ("*",)
 
@@ -144,10 +141,7 @@ class ResourceKey(BaseModel):
                         resource_type = token.split(".")[0]
                     else:
                         resource_type = None
-                    if (
-                        "*" not in resource_types
-                        and resource_type not in resource_types
-                    ):
+                    if "*" not in resource_types and resource_type not in resource_types:
                         raise InvalidToken("resource key is of the wrong type")
                 return cls(resource_type=resource_type, resource_key=token)
             except (InvalidToken, ValidationError, ValueError) as exc:

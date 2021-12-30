@@ -41,9 +41,7 @@ def ws_controller(router: APIRouter, path: str, name: Optional[str] = None):
     return decorator
 
 
-def add_ws_controller(
-    cls: Type["Hub"], router: APIRouter, path: str, name: Optional[str] = None
-):
+def add_ws_controller(cls: Type["Hub"], router: APIRouter, path: str, name: Optional[str] = None):
     _init_ws_cbv(cls)
     caller = getattr(cls, WS_CBV_CALL_NAME)
     router.add_api_websocket_route(router.prefix + path, caller, name=name)
@@ -64,12 +62,11 @@ def bind_message(msg_type: Optional[str] = None):
         params = sig.parameters.copy()
         if "self" in params:
             del params["self"]
-        message_params = [
-            p for p in params.values() if p.default is inspect.Parameter.empty
-        ]
+        message_params = [p for p in params.values() if p.default is inspect.Parameter.empty]
         if len(message_params) > 1:
             raise TypeError(
-                "Invalid message handler signature - only one or zero parameters without default value allowed"
+                "Invalid message handler signature - only one or zero parameters"
+                " without default value allowed"
             )
         if len(message_params) == 0:
             typehint = None
@@ -141,10 +138,12 @@ class Hub:
             assert (
                 "msg_type" in json_obj and "data" in json_obj
             ), 'Message object does not contain "data" and "msg_type" keys'
-            assert isinstance(
-                json_obj["msg_type"], str
-            ), 'Raw message\'s "type" is not a string'
-            return {"msg_type": json_obj["msg_type"], "data": json_obj["data"]}
+            assert isinstance(json_obj["msg_type"], str), 'Raw message\'s "type" is not a string'
+            message = {"msg_type": json_obj["msg_type"], "data": json_obj["data"]}
+            logger.debug(
+                f"recv from {self.websocket.client.host}:{self.websocket.client.port} < {message}"
+            )
+            return message
         except AssertionError as exc:
             raise InvalidMessageException(str(exc))
 

@@ -31,8 +31,11 @@ JSON_LOGS = True if os.environ.get("JSON_LOGS", "0") == "1" else False
 def create_logger():
     logger.remove()
     logger.bind(logger_name="default")
-    format = "<green>{time:YYMMDD hh:mm:ss}</green> | <level>{message}</level>"
-    logger.add(sys.stderr, format=format)
+    fmt = (
+        "<green>{time:YYMMDD hh:mm:ss}</green> | <level>{level}</level> | {name}:{function}:{line}"
+        " | <level>{message}</level>"
+    )
+    logger.add(sys.stderr, format=fmt)
     seen = set()
     logging.getLogger("uvicorn.access").handlers = [InterceptHandler()]
     for logger_name in ["uvicorn", "uvicorn.access"]:

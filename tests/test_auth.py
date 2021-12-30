@@ -35,9 +35,7 @@ def test_logging_in(client: TestClient):
 
 def test_numbers_allowed_as_usernames_or_passwords(client: TestClient):
     assert (
-        client.post(
-            "/auth/register", json={"username": 123, "password": 42424242}
-        ).status_code
+        client.post("/auth/register", json={"username": 123, "password": 42424242}).status_code
         == 200
     )
 
@@ -50,18 +48,12 @@ def test_registering_and_logging_in(client: TestClient):
         ).status_code
         == 422
     )
-    resp = client.post(
-        "/auth/register", json={"username": "myUser", "password": "password"}
-    )
+    resp = client.post("/auth/register", json={"username": "myUser", "password": "password"})
     assert resp.status_code == 200
     resp = client.post("/auth/token", json={"login": "myUser", "password": "password"})
     assert resp.status_code == 200
     data = json.loads(resp.content)
-    assert (
-        "refresh_token" in data
-        and "access_token" in data
-        and data["token_type"] == "bearer"
-    )
+    assert "refresh_token" in data and "access_token" in data and data["token_type"] == "bearer"
     assert data["refresh_token"] is not None
 
     resp = client.post(
@@ -71,9 +63,7 @@ def test_registering_and_logging_in(client: TestClient):
     assert resp.status_code == 200
     data = resp.json()
     assert (
-        "refresh_token" in data
-        and "access_token" in data
-        and data["token_type"] == "hybrid-bearer"
+        "refresh_token" in data and "access_token" in data and data["token_type"] == "hybrid-bearer"
     )
     assert data["refresh_token"] is None
     assert JWT_REFRESH_COOKIE in resp.headers["set-cookie"]
@@ -82,15 +72,7 @@ def test_registering_and_logging_in(client: TestClient):
 
 def test_refreshing_token(client: TestClient):
     client.post("/auth/register", json={"username": "myUser22", "password": "password"})
-    resp = client.post(
-        "/auth/token", json={"login": "myUser22", "password": "password"}
-    )
-    resp = client.post(
-        "/auth/refresh", json={"refresh_token": resp.json()["refresh_token"]}
-    )
+    resp = client.post("/auth/token", json={"login": "myUser22", "password": "password"})
+    resp = client.post("/auth/refresh", json={"refresh_token": resp.json()["refresh_token"]})
     data = resp.json()
-    assert (
-        "refresh_token" in data
-        and "access_token" in data
-        and data["token_type"] == "bearer"
-    )
+    assert "refresh_token" in data and "access_token" in data and data["token_type"] == "bearer"

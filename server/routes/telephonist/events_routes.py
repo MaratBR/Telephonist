@@ -58,9 +58,7 @@ async def publish_event_endpoint(
         source_type = EventSource.APPLICATION
         app = await Application.find_by_key(rk.resource_key)
         if app.app_host_id:
-            raise HTTPException(
-                401, "this applications belongs to the application host"
-            )
+            raise HTTPException(401, "this applications belongs to the application host")
         source_id = app.id
 
     else:

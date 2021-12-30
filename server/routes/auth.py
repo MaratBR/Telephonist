@@ -33,13 +33,8 @@ class NewUserInfo(BaseModel):
 
 @auth_router.post("/register")
 async def register_new_user(info: NewUserInfo, host: Optional[str] = Header(None)):
-    if (
-        settings.user_registration_unix_socket_only
-        and host != settings.unix_socket_name
-    ):
-        raise HTTPException(
-            403, "User registration is only allowed through unix socket"
-        )
+    if settings.user_registration_unix_socket_only and host != settings.unix_socket_name:
+        raise HTTPException(403, "User registration is only allowed through unix socket")
     try:
         await User.create_user(info.username, info.password)
     except DuplicateKeyError:
@@ -58,12 +53,9 @@ async def set_password(
 ):
     user = await User.get(token.sub)
     if user is None or (
-        user.last_password_changed is not None
-        and user.last_password_changed > token.issued_at
+        user.last_password_changed is not None and user.last_password_changed > token.issued_at
     ):
-        raise HTTPException(
-            401, "user not found or token is no longer valid for the user"
-        )
+        raise HTTPException(401, "user not found or token is no longer valid for the user")
 
     if len(body.password) == 0:
         raise HTTPException(400, "password cannot be empty")
@@ -124,9 +116,7 @@ async def refresh(
 
     if settings.rotate_refresh_token:
         await token.delete()
-        refresh_token = (
-            await RefreshToken.create_token(user, settings.refresh_token_lifetime)
-        )[1]
+        refresh_token = (await RefreshToken.create_token(user, settings.refresh_token_lifetime))[1]
 
     return TokenResponse(
         user.create_token(),

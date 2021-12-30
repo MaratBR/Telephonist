@@ -1,10 +1,11 @@
 from datetime import timedelta
-from typing import List, Optional
+from typing import Generic, List, Optional, TypeVar
 
 from pydantic import BaseSettings
 
 
 class Settings(BaseSettings):
+    jsonschema_validator: str = "jsonschema.Draft202012Validator"
     mongodb_db_name: str = "test"
     jwt_secret: str = "secret" * 5
     jwt_issuer: Optional[str] = "https://telephonist.io"
@@ -23,6 +24,7 @@ class Settings(BaseSettings):
     user_registration_unix_socket_only: bool = True
     unix_socket_name: str = "unix"
     use_anonymous_user: bool = False
+    hanging_connections_policy: str = "remove"
 
     class Config:
         env_prefix = "telephonist_"

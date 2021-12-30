@@ -2,7 +2,7 @@
 profile = "black"
 
 [tool.black]
-line-length = 88
+line-length = 100
 
 [tool.poetry]
 name = "telephonist"
@@ -27,6 +27,7 @@ websockets = "^10.0"
 python-jose = {extras = ["cryptography"], version = "^3.2.0"}
 loguru = "^0.5.3"
 bcrypt = "^3.2.0"
+jsonschema = "^4.3.2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.5"

@@ -42,9 +42,7 @@ class BackplaneBase(ABC):
         ...
 
     @abstractmethod
-    def subscribe(
-        self, channel: str, *channels: str
-    ) -> AsyncContextManager[AsyncIterable[Any]]:
+    def subscribe(self, channel: str, *channels: str) -> AsyncContextManager[AsyncIterable[Any]]:
         ...
 
     @abstractmethod

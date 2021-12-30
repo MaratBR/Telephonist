@@ -35,7 +35,7 @@ async def init_database():
         ):
             try:
                 await model.on_database_ready()
-            except Exception as exc:
+            except Exception:
                 pass
 
 

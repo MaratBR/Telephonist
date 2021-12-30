@@ -64,9 +64,7 @@ class TokenResponse(JSONResponse):
 
 
 class BearerSchema(HTTPBearer):
-    async def __call__(
-        self, authorization: Optional[str] = Header(None)
-    ) -> Optional[str]:
+    async def __call__(self, authorization: Optional[str] = Header(None)) -> Optional[str]:
         if authorization is None:
             return None
         scheme, param = get_authorization_scheme_param(authorization)

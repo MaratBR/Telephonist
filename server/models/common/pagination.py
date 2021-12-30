@@ -73,9 +73,7 @@ class Pagination:
                 f"{cls.__name__}.max_pages_per_request is less than 1, value will be ignored"
             )
         if cls.max_page_size < 1:
-            warnings.warn(
-                f"{cls.__name__}.max_page_size is less than 1, value will be ignored"
-            )
+            warnings.warn(f"{cls.__name__}.max_page_size is less than 1, value will be ignored")
         if not hasattr(cls, "Parameters"):
 
             class Parameters(BaseModel):
@@ -95,9 +93,7 @@ class Pagination:
                     (
                         __order_by_enum__,
                         __order_by_enum_default__,
-                    ) = _create_order_by_enum(
-                        cls.default_order_by, cls.ordered_by_options
-                    )
+                    ) = _create_order_by_enum(cls.default_order_by, cls.ordered_by_options)
                     order: OrderingDirection = OrderingDirection.ASC
                     order_by: __order_by_enum__ = __order_by_enum_default__
 
@@ -122,9 +118,7 @@ class Pagination:
         self,
         cls: Type[Document],
         project: Optional[Type[BaseModel]] = None,
-        filter_condition: Optional[
-            Union[Dict[str, Any], List[Dict[str, Any]], List[bool]]
-        ] = None,
+        filter_condition: Optional[Union[Dict[str, Any], List[Dict[str, Any]], List[bool]]] = None,
     ):
         if filter_condition:
             q = (

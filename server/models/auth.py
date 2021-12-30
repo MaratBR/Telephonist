@@ -87,9 +87,7 @@ class User(Document):
         return None
 
     @classmethod
-    async def by_username(
-        cls, username: str, include_disabled: bool = False
-    ) -> Optional["User"]:
+    async def by_username(cls, username: str, include_disabled: bool = False) -> Optional["User"]:
         q = cls if include_disabled else cls.find(cls.disabled == False)
         q = cls.find(cls.username == username)
         q = q.limit(1)
@@ -119,9 +117,7 @@ class User(Document):
     async def on_database_ready(cls):
         if settings.create_default_user:
             try:
-                await cls.create_user(
-                    settings.default_username, settings.default_password
-                )
+                await cls.create_user(settings.default_username, settings.default_password)
             except DuplicateKeyError:
                 pass
 
@@ -192,9 +188,7 @@ class RefreshToken(Document):
         )
 
     @classmethod
-    async def create_token(
-        cls, user: User, lifetime: timedelta
-    ) -> Tuple["RefreshToken", str]:
+    async def create_token(cls, user: User, lifetime: timedelta) -> Tuple["RefreshToken", str]:
         token = create_static_key(40)
         refresh_token = cls(
             user_id=user.id,
@@ -205,9 +199,9 @@ class RefreshToken(Document):
         return refresh_token, token
 
     def matches(self, token: str):
-        return self.id == base64.urlsafe_b64encode(hashlib.sha256(token).digest())[
-            :43
-        ].decode("ascii")
+        return self.id == base64.urlsafe_b64encode(hashlib.sha256(token).digest())[:43].decode(
+            "ascii"
+        )
 
     @staticmethod
     def _make_token_id(token: str):

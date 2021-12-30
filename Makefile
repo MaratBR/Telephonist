@@ -3,7 +3,7 @@ black := black
 
 format:
 	$(isort) server tests main.py
-	$(black) server tests main.py
+	$(black) --experimental-string-processing server tests main.py
 
 prepare:
 	pre-commit install

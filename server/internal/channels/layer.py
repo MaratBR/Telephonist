@@ -45,9 +45,7 @@ class Connection(HubProxy):
         # TODO проверить на race condition
         if self._active:
             for g in self._groups:
-                await self._backplane.detach_listener(
-                    CHANNEL_LAYER_PREFIX + g, self._queue.put
-                )
+                await self._backplane.detach_listener(CHANNEL_LAYER_PREFIX + g, self._queue.put)
         self._groups.clear()
 
     async def add_to_group(self, group: str):
@@ -55,36 +53,26 @@ class Connection(HubProxy):
             return
         self._groups.add(group)
         if self._active:
-            await self._backplane.attach_listener(
-                CHANNEL_LAYER_PREFIX + group, self._queue.put
-            )
+            await self._backplane.attach_listener(CHANNEL_LAYER_PREFIX + group, self._queue.put)
 
     async def remove_from_group(self, group: str):
         if group not in self._groups:
             return
         self._groups.remove(group)
         if self._active:
-            await self._backplane.detach_listener(
-                CHANNEL_LAYER_PREFIX + group, self._queue.put
-            )
+            await self._backplane.detach_listener(CHANNEL_LAYER_PREFIX + group, self._queue.put)
 
     async def __aenter__(self):
         assert not self._active, "Connection cannot be activated if it's already active"
         self._active = True
         for group in self._groups:
-            await self._backplane.attach_listener(
-                CHANNEL_LAYER_PREFIX + group, self._queue.put
-            )
+            await self._backplane.attach_listener(CHANNEL_LAYER_PREFIX + group, self._queue.put)
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        assert (
-            self._active
-        ), "Connection cannot be deactivate when it's already deactivated"
+        assert self._active, "Connection cannot be deactivate when it's already deactivated"
         self._active = False
         for group in self._groups:
-            await self._backplane.detach_listener(
-                CHANNEL_LAYER_PREFIX + group, self._queue.put
-            )
+            await self._backplane.detach_listener(CHANNEL_LAYER_PREFIX + group, self._queue.put)
 
     def _send(self, msg_type: str, message: Any) -> Awaitable[None]:
         return self._queue.put({"msg_type": msg_type, "data": message})
@@ -128,9 +116,7 @@ class ChannelLayer:
 
     async def _internal_messages(self):
         try:
-            async with self._backplane.subscribe(
-                "__internal", "__internal:" + self._id
-            ) as sub:
+            async with self._backplane.subscribe("__internal", "__internal:" + self._id) as sub:
                 async for message in sub:
                     await self._handle_internal_message(message)
         except asyncio.CancelledError:
