@@ -21,6 +21,7 @@ from server.internal.channels import get_channel_layer, wscode
 from server.internal.channels.hub import (
     Hub,
     HubAuthenticationException,
+    bind_layer_event,
     bind_message,
     ws_controller,
 )
@@ -195,7 +196,7 @@ async def confirm_code_registration(code: str):
     if code is None:
         raise HTTPException(404, "code does not exist or expired")
     code.confirmed = True
-    code.expires_at = datetime.now() + timedelta(days=10)
+    code.expires_at = datetime.utcnow() + timedelta(days=10)
     await code.save()
     return {"detail": "Code confirmed"}
 
@@ -302,6 +303,7 @@ class AppReportHub(Hub):
         assert self._connection_info, "ConnectionInfo object suddenly disappeared from database"
 
     async def on_connected(self):
+        await self.channel_layer.publish_layer_event("test", {"data": 42})
         await self.send_message(
             "introduction",
             {
@@ -311,6 +313,10 @@ class AppReportHub(Hub):
                 "app_id": self._app_id,
             },
         )
+
+    @bind_layer_event("test")
+    async def test(self, value):
+        print(value)
 
     async def _send_connection(self):
         await self.channel_layer.group_send(
@@ -328,8 +334,8 @@ class AppReportHub(Hub):
         if self._connection_info:
             await self._connection_info.replace()
             self._connection_info.is_connected = False
-            self._connection_info.disconnected_at = datetime.now()
-            self._connection_info.expires_at = datetime.now() + timedelta(days=1)
+            self._connection_info.disconnected_at = datetime.utcnow()
+            self._connection_info.expires_at = datetime.utcnow() + timedelta(days=1)
             await self._connection_info.save_changes()
 
     @bind_message("set_settings")
@@ -366,7 +372,7 @@ class AppReportHub(Hub):
 
         # region ensure that connection object exists
 
-        await self.connection.add_to_group(ChannelGroups.app_events(self._app_id))
+        await self.connection.add_to_group(ChannelGroups.app_updates(self._app_id))
         connection_info = await ConnectionInfo.find_one(
             ConnectionInfo.ip == self.websocket.client.host,
             ConnectionInfo.app_id == self._app_id,
@@ -392,7 +398,7 @@ class AppReportHub(Hub):
                 connection_info.software_version = message.software_version
                 connection_info.internal_id = self.connection.id
                 connection_info.is_connected = True
-                connection_info.connected_at = datetime.now()
+                connection_info.connected_at = datetime.utcnow()
                 connection_info.expires_at = None
                 connection_info.connection_state_fingerprint = connection_fingerprint
                 connection_info.os = message.os
@@ -412,7 +418,7 @@ class AppReportHub(Hub):
             await self.__create_connection(connection_fingerprint, message.os)
 
         await Server.report_server(self.websocket.client, None if message.os == "" else message.os)
-
+        await self._send_connection()
         # endregion
 
         if message.subscriptions:

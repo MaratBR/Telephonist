@@ -21,15 +21,15 @@ async def publish_event(event: Event) -> Event:
     await get_channel_layer().groups_send(
         channels,
         "new_event",
-        dict(
-            event_type=event.event_type,
-            source_ip=event.publisher_ip,
-            source_id=event.source_id,
-            data=event.data,
-            related_task=event.related_task,
-            source_type=event.source_type,
-            created_at=event.id.generation_time,
-        ),
+        {
+            "event_type": event.event_type,
+            "source_ip": event.publisher_ip,
+            "source_id": event.source_id,
+            "data": event.data,
+            "related_task": event.related_task,
+            "source_type": event.source_type,
+            "created_at": event.id.generation_time,
+        },
     )
     return event
 

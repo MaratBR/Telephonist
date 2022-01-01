@@ -8,9 +8,14 @@ import nanoid
 from loguru import logger
 from pydantic import BaseModel
 
-from server.internal.channels.backplane import BackplaneBase, get_default_backplane
+from server.internal.channels.backplane import (
+    BackplaneBase,
+    BackplaneListener,
+    get_default_backplane,
+    mapped_subscription,
+)
 
-CHANNEL_LAYER_PREFIX = "CL"
+_PREFIX = "CL."
 
 
 class HubError(Exception):
@@ -45,7 +50,7 @@ class Connection(HubProxy):
         # TODO проверить на race condition
         if self._active:
             for g in self._groups:
-                await self._backplane.detach_listener(CHANNEL_LAYER_PREFIX + g, self._queue.put)
+                await self._backplane.detach_queue(_PREFIX + g, self._queue)
         self._groups.clear()
 
     async def add_to_group(self, group: str):
@@ -53,26 +58,26 @@ class Connection(HubProxy):
             return
         self._groups.add(group)
         if self._active:
-            await self._backplane.attach_listener(CHANNEL_LAYER_PREFIX + group, self._queue.put)
+            await self._backplane.attach_queue(_PREFIX + group, self._queue)
 
     async def remove_from_group(self, group: str):
         if group not in self._groups:
             return
         self._groups.remove(group)
         if self._active:
-            await self._backplane.detach_listener(CHANNEL_LAYER_PREFIX + group, self._queue.put)
+            await self._backplane.detach_queue(_PREFIX + group, self._queue)
 
     async def __aenter__(self):
         assert not self._active, "Connection cannot be activated if it's already active"
         self._active = True
         for group in self._groups:
-            await self._backplane.attach_listener(CHANNEL_LAYER_PREFIX + group, self._queue.put)
+            await self._backplane.attach_queue(_PREFIX + group, self._queue)
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         assert self._active, "Connection cannot be deactivate when it's already deactivated"
         self._active = False
         for group in self._groups:
-            await self._backplane.detach_listener(CHANNEL_LAYER_PREFIX + group, self._queue.put)
+            await self._backplane.detach_queue(_PREFIX + group, self._queue)
 
     def _send(self, msg_type: str, message: Any) -> Awaitable[None]:
         return self._queue.put({"msg_type": msg_type, "data": message})
@@ -80,10 +85,17 @@ class Connection(HubProxy):
     async def queued_messages(self) -> AsyncIterable[dict]:
         assert self._active, "Connection is not active"
         while True:
-            message = await self._queue.get()
-            if message is None:
-                break
-            yield message
+            channel, message = await self._queue.get()
+            if not channel.startswith(_PREFIX):
+                logger.warning(
+                    'received a message from channel "{channel}" that doesn\'t start with a prefix'
+                    " {prefix}",
+                    channel=channel,
+                    prefix=_PREFIX,
+                )
+                continue
+            channel = channel[len(_PREFIX) :]
+            yield channel, message
 
 
 class ChannelLayer:
@@ -116,8 +128,10 @@ class ChannelLayer:
 
     async def _internal_messages(self):
         try:
-            async with self._backplane.subscribe("__internal", "__internal:" + self._id) as sub:
-                async for message in sub:
+            async with self._backplane.subscribe(
+                _PREFIX + "__internal", _PREFIX + "__internal:" + self._id
+            ) as sub:
+                async for _, message in sub:
                     await self._handle_internal_message(message)
         except asyncio.CancelledError:
             pass
@@ -169,7 +183,7 @@ class ChannelLayer:
 
     async def groups_send(self, groups: List[str], msg_type: str, data: Any):
         await self._backplane.publish_many(
-            [CHANNEL_LAYER_PREFIX + g for g in groups],
+            [_PREFIX + g for g in groups],
             {"msg_type": msg_type, "data": data},
         )
 
@@ -178,6 +192,16 @@ class ChannelLayer:
         if len(parts) == 1:
             return self._id, parts[0]
         return parts
+
+    def publish_layer_event(self, event_name: str, data: Any):
+        return self._backplane.publish(_PREFIX + "__event:" + event_name, data)
+
+    def subscribe_to_layer_events(self, event: str, *events: str):
+        prefix = _PREFIX + "__event:"
+        return mapped_subscription(
+            self._backplane.subscribe(prefix + event, *(prefix + e for e in events)),
+            lambda pair: (pair[0][len(prefix) :], pair[1]),
+        )
 
 
 _channel_layer: Optional[ChannelLayer] = None

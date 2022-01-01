@@ -57,7 +57,7 @@ class User(Document):
     def set_password(self, password: str):
         self.password_hash = hash_password(password)
         self.password_reset_required = False
-        self.last_password_changed = datetime.now()
+        self.last_password_changed = datetime.utcnow()
 
     def __str__(self):
         return self.username
@@ -75,7 +75,7 @@ class User(Document):
             token_type=token_type,
             is_superuser=self.is_superuser,
             username=self.username,
-            exp=datetime.now() + (lifetime or timedelta(hours=4)),
+            exp=datetime.utcnow() + (lifetime or timedelta(hours=4)),
             check_string=check_string,
         )
 
@@ -184,7 +184,7 @@ class RefreshToken(Document):
         return await cls.find_one(
             cls.id == cls._make_token_id(token),
             Eq(cls.blocked, False),
-            cls.expiration_date > datetime.now(),
+            cls.expiration_date > datetime.utcnow(),
         )
 
     @classmethod
@@ -192,7 +192,7 @@ class RefreshToken(Document):
         token = create_static_key(40)
         refresh_token = cls(
             user_id=user.id,
-            expiration_date=datetime.now() + lifetime,
+            expiration_date=datetime.utcnow() + lifetime,
             id=cls._make_token_id(token),
         )
         await refresh_token.save()

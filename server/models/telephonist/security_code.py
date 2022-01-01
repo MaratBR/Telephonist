@@ -37,7 +37,7 @@ class OneTimeSecurityCode(Document):
         code = await cls._generate_code()
         code_inst = cls(
             id=code,
-            expires_at=datetime.now() + lifetime,
+            expires_at=datetime.utcnow() + lifetime,
             code_type=code_type,
             ip_address=ip_address,
             created_by=created_by,
@@ -70,7 +70,7 @@ class OneTimeSecurityCode(Document):
     def get_valid_code(cls, code_type: str, code: str) -> Awaitable["OneTimeSecurityCode"]:
         return cls.find_one(
             {"_id": code, "code_type": code_type},
-            cls.expires_at > datetime.now(),
+            cls.expires_at > datetime.utcnow(),
         )
 
     @classmethod

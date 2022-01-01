@@ -33,6 +33,6 @@ class Server(Document):
         if server is None:
             await cls(ip=ip, os=os).save()
         else:
-            server.last_seen = datetime.now()
+            server.last_seen = datetime.utcnow()
             server.os = os
             await server.replace()

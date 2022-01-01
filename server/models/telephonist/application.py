@@ -178,7 +178,7 @@ class SentEventTrace(Document):
             cls.event_type == event_type,
             cls.from_app == from_app,
         ).upsert(
-            SetOp({cls.last_event: datetime.now()}),
+            SetOp({cls.last_event: datetime.utcnow()}),
             Inc(cls.count),
             on_insert=cls(event_type=event_type, from_app=from_app, to_app=to_app),
         )

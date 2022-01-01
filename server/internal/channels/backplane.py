@@ -1,35 +1,92 @@
 import asyncio
 import base64
+import importlib
 import inspect
 import pickle
+import struct
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone, tzinfo
+from functools import partial
 from typing import *
+from uuid import UUID
 
 import aioredis
+import msgpack
+from beanie import PydanticObjectId
 from loguru import logger
+from pydantic import BaseModel
+
+_MAX32INT = 4294967295
 
 
-def encode_broadcast_message(data: Any) -> str:
-    return base64.b85encode(pickle.dumps(data)).decode("ascii")
+def _default_encoder(o: Any) -> Any:
+    if isinstance(o, BaseModel):
+        model_class = type(o)
+        return {
+            "__pydantic__": model_class.__module__ + ":" + model_class.__qualname__,
+            "_": o.dict(),
+        }
+    elif isinstance(o, datetime):
+        if o.tzinfo:
+            offset = int(o.tzinfo.utcoffset(o).total_seconds())
+        else:
+            offset = _MAX32INT
+        return msgpack.ExtType(53, struct.pack("!dI", o.timestamp(), offset))
+    elif isinstance(o, PydanticObjectId):
+        return msgpack.ExtType(54, o.binary)
+    elif isinstance(o, UUID):
+        return msgpack.ExtType(55, o.bytes)
+    return o
 
 
-def decode_broadcast_message(string: str) -> Any:
-    try:
-        return pickle.loads(base64.b85decode(string))
-    except:
-        raise ValueError("Failed to decode broadcast message")
+_modules_cache = {}
+
+
+def _object_hook(obj: dict):
+    if "__pydantic__" in obj:
+        module, qualname = obj["__pydantic__"].split(":", 1)
+        if module not in _modules_cache:
+            _modules_cache[module] = importlib.import_module(module)
+        model_class = _modules_cache[module]
+        parts = qualname.split(".")
+        for p in parts:
+            model_class = getattr(model_class, p)
+        return model_class(**obj["_"])
+    return obj
+
+
+def _ext_hook(code: int, data: Any):
+    if code == 54:
+        return PydanticObjectId(data)
+    elif code == 53:
+        ts, offset = struct.unpack("!dI", data)
+        return datetime.fromtimestamp(
+            ts, timezone(timedelta(seconds=offset)) if offset != _MAX32INT else None
+        )
+    elif code == 55:
+        return UUID(bytes=data)
+    return msgpack.ExtType(code, data)
+
+
+def encode_broadcast_message(data: Any) -> bytes:
+    return msgpack.packb(data, default=_default_encoder)
+
+
+def decode_broadcast_message(string: bytes) -> Any:
+    return msgpack.unpackb(string, ext_hook=_ext_hook, object_hook=_object_hook)
 
 
 class Subscription:
     def __init__(self, queue: asyncio.Queue):
         self._queue = queue
 
-    async def __aiter__(self):
+    async def __aiter__(self) -> AsyncIterable[Tuple[str, Any]]:
         while True:
             yield await self._queue.get()
 
 
+Unsubscribe = Callable[[], Awaitable[None]]
 BackplaneListener = Callable[[Any], Union[None, Awaitable[None]]]
 
 
@@ -41,23 +98,40 @@ class BackplaneBase(ABC):
     async def publish_many(self, channels: List[str], data: Any):
         ...
 
+    if TYPE_CHECKING:
+
+        def subscribe(
+            self, channel: str, *channels: str
+        ) -> AsyncContextManager[AsyncIterable[Tuple[str, Any]]]:
+            ...
+
+    @asynccontextmanager
+    async def subscribe(self, channel: str, *channels):
+        channels = channels + (channel,)
+
+        queue = asyncio.Queue()
+        for channel in channels:
+            await self.attach_queue(channel, queue)
+
+        try:
+            yield Subscription(queue)
+        finally:
+            for channel in channels:
+                await self.detach_queue(channel, queue)
+
     @abstractmethod
-    def subscribe(self, channel: str, *channels: str) -> AsyncContextManager[AsyncIterable[Any]]:
+    async def attach_queue(self, channel: str, queue: asyncio.Queue):
         ...
 
     @abstractmethod
-    async def attach_listener(self, channel: str, listener: BackplaneListener):
-        ...
-
-    @abstractmethod
-    async def detach_listener(self, channel: str, listener: BackplaneListener):
+    async def detach_queue(self, channel: str, queue: asyncio.Queue):
         ...
 
 
 class Backplane(BackplaneBase):
     def __init__(self, redis_url: str):
         self._redis = aioredis.from_url(redis_url)
-        self._listeners: Dict[str, List[BackplaneListener]] = {}
+        self._listeners: Dict[str, List[asyncio.Queue]] = {}
         self._pubsub = self._redis.pubsub()
         self._receiver_task: Optional[asyncio.Task] = None
 
@@ -83,6 +157,7 @@ class Backplane(BackplaneBase):
                 try:
                     data = decode_broadcast_message(message["data"])
                 except Exception as exc:
+                    logger.exception(exc)
                     continue  # TODO
 
                 await self._dispatch_message(message["channel"].decode(), data)
@@ -92,32 +167,19 @@ class Backplane(BackplaneBase):
             logger.exception(exc)
         logger.debug("Receiver loop has completed execution")
 
-    @asynccontextmanager
-    async def subscribe(self, channel: str, *channels):
-        channels = channels + (channel,)
-
-        queue = asyncio.Queue()
-        for channel in channels:
-            await self.attach_listener(channel, queue.put)
-
-        try:
-            yield Subscription(queue)
-        finally:
-            for channel in channels:
-                await self.detach_listener(channel, queue.put)
-
-    async def attach_listener(self, channel: str, listener: BackplaneListener):
+    async def attach_queue(self, channel: str, queue: asyncio.Queue) -> Unsubscribe:
         listeners = self._listeners.get(channel)
         if listeners:
-            listeners.append(listener)
+            listeners.append(queue)
         else:
             await self._subscribe(channel)
-            self._listeners[channel] = [listener]
+            self._listeners[channel] = [queue]
+        return partial(self.detach_queue, channel, queue)
 
-    async def detach_listener(self, channel: str, listener: BackplaneListener):
+    async def detach_queue(self, channel: str, queue: asyncio.Queue):
         listeners = self._listeners.get(channel)
-        if listeners and listener in listeners:
-            listeners.remove(listener)
+        if listeners and queue in listeners:
+            listeners.remove(queue)
             if len(listeners) == 0:
                 del self._listeners[channel]
                 await self._unsubscribe(channel)
@@ -127,12 +189,7 @@ class Backplane(BackplaneBase):
             return
         listeners = [*self._listeners[channel]]
         for listener in listeners:
-            try:
-                v = listener(message)
-                if inspect.isawaitable(v):
-                    await v
-            except Exception as exc:
-                logger.exception(exc)
+            await listener.put((channel, message))
 
     async def _subscribe(self, channel: str):
         await self._pubsub.subscribe(channel)
@@ -162,3 +219,19 @@ async def stop_backplane():
 def get_default_backplane():
     assert _backplane is not None, "Backplane is not yet initialized"
     return _backplane
+
+
+T = TypeVar("T")
+
+
+@asynccontextmanager
+async def mapped_subscription(
+    manager: AsyncContextManager[AsyncIterable[T]], map_function: Callable[[T], T]
+) -> AsyncContextManager[AsyncIterable[Tuple[str, Any]]]:
+    async with manager as iterable:
+
+        async def mapper():
+            async for item in iterable:
+                yield map_function(item)
+
+        yield mapper()
