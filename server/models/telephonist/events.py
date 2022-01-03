@@ -6,16 +6,11 @@ from beanie import Document, Indexed, PydanticObjectId
 from server.database import register_model
 
 
-class EventSource(str, enum.Enum):
-    USER = "user"
-    APPLICATION = "app"
-    UNKNOWN = "?"
-
-
 @register_model
 class Event(Document):
-    source_type: EventSource = EventSource.UNKNOWN
-    source_id: Optional[PydanticObjectId]
+    user_id: Optional[PydanticObjectId]
+    app_id: Optional[PydanticObjectId]
+    event_key: Indexed(str)
     event_type: Indexed(str)
     related_task: Optional[str]
     data: Optional[Any] = None

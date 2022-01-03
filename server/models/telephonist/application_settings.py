@@ -1,35 +1,32 @@
-import enum
-from typing import *
+from typing import Dict, List, Optional, Type
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from server.internal.telephonist.application_settings_registry import (
-    builtin_application_settings,
-)
-
-
-class SendIf(str, enum.Enum):
-    ALWAYS = "always"
-    IF_NON_0_EXIT = "if_non_0_exit"
-    NEVER = "never"
-
-
-class TaskDescriptorType(str, enum.Enum):
-    CRON = "cron"
-    EVENT = "event"
+from server.models.telephonist import Application
 
 
 class TaskDescriptor(BaseModel):
-    command: Optional[str]
-    send_stderr: SendIf = SendIf.ALWAYS
-    send_stdout: SendIf = SendIf.ALWAYS
-    on_success_event: Optional[str]
-    on_failure_event: Optional[str]
-    on_complete_event: Optional[str]
+    cmd: Optional[str]
+    on_events: List[str]
     cron: Optional[str]
-    on_events: Optional[List[str]]
+    env: Dict[str, str]
+    task_name: str
 
 
-@builtin_application_settings.register("supervisor-v1")
-class SupervisorSettingsV1(BaseModel):
-    tasks: List[TaskDescriptor]
+class HostSettings(BaseModel):
+    tasks: List[TaskDescriptor] = Field(default_factory=list)
+
+
+def get_default_settings_for_type(application_type: str):
+    model_class = get_application_settings_model(application_type)
+    if model_class:
+        return model_class()
+
+
+def get_application_settings_model(application_type: str) -> Type[BaseModel]:
+    if application_type == Application.HOST_TYPE:
+        return HostSettings
+
+
+def application_type_allows_empty_settings(application_type: str):
+    return application_type not in (Application.HOST_TYPE,)

@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     is_testing: bool = False
     cors_origin: List[str] = [
         "http://localhost:1234",
-        "https://localhost:1234",
+        "http://telephonist.lc:1234",
     ]
     default_username: str = "admin"
     default_password: str = "admin"
@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     unix_socket_name: str = "unix"
     use_anonymous_user: bool = False
     hanging_connections_policy: str = "remove"
+    allow_custom_application_types: bool = False
+    cookies_policy: str = "None"
 
     class Config:
         env_prefix = "telephonist_"

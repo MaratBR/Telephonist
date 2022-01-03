@@ -100,8 +100,10 @@ async def refresh(
 ):
     refresh_cookie = request.cookies.get(JWT_REFRESH_COOKIE)
     if body is not None:
+        refresh_as_cookie = False
         refresh_token = body.refresh_token
     elif refresh_cookie is not None:
+        refresh_as_cookie = True
         refresh_token = refresh_cookie
     else:
         raise HTTPException(status.HTTP_400_BAD_REQUEST)
@@ -122,4 +124,5 @@ async def refresh(
         user.create_token(),
         refresh_token if settings.rotate_refresh_token else None,
         refresh_cookie_path=request.scope["router"].url_path_for("refresh"),
+        refresh_as_cookie=refresh_as_cookie
     )
