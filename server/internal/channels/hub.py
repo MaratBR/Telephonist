@@ -304,7 +304,8 @@ class Hub:
                 try:
                     message_data = parse_obj_as(handler.typehint, message["data"])
                 except ValidationError as exc:
-                    await self.send_error(exc)
+                    await self.send_error(str(exc), "invalid_data")
+                    return
             try:
                 await _call_method(method, message_data)
             except Exception as exc:

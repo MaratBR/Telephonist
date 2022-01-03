@@ -1,8 +1,11 @@
-from typing import Optional, TypeVar, Union
+from typing import Any, Optional, TypeVar, Union
 
-from beanie import PydanticObjectId
+from beanie import Document, PydanticObjectId
 from fastapi import HTTPException
 from starlette import status
+
+from server.internal.channels import get_channel_layer
+from server.models.common import Identifier
 
 T = TypeVar("T")
 
@@ -31,17 +34,42 @@ class ChannelGroups:
         return cls.ENTRY_UPDATE + "." + entry_type + "." + entry_id
 
     @classmethod
-    def event(cls, name: str):
+    def for_event_type(cls, name: str):
         return cls.EVENTS + ".byName." + name
 
     @classmethod
-    def task_events(cls, task_name: str):
+    def for_task_event(cls, task_name: str):
         return cls.EVENTS + ".byTask." + task_name
 
     @classmethod
-    def app_events(cls, app_id: Union[str, PydanticObjectId]):
-        return cls.APPS + "." + str(app_id) + ".events"
+    def for_event_key(cls, event_key: str):
+        return cls.EVENTS + ".byKey." + event_key
 
     @classmethod
-    def app_updates(cls, app_id: Union[str, PydanticObjectId]):
-        return cls.APPS + "." + str(app_id) + ".updates"
+    def for_events(
+        cls,
+        app_id: Optional[Union[str, PydanticObjectId]] = None,
+        event_type: Optional[Union[str, Identifier]] = None,
+    ):
+        app_id = str(app_id) if app_id else "*"
+        event_type = str(event_type) if event_type else "*"
+        return f"{cls.APPS}.{app_id}.events.{event_type}"
+
+    @classmethod
+    def public_app(cls, app_id: Union[str, PydanticObjectId]):
+        return cls.APPS + "." + str(app_id) + ".public"
+
+    @classmethod
+    def private_app(cls, app_id: Union[str, PydanticObjectId]):
+        return cls.APPS + "." + str(app_id) + ".private"
+
+
+async def trigger_entry_update(entry_type: str, entry_id: str, data: Any):
+    entry_id = str(doc.id)
+    entry_type = type(doc).__name__
+    key = f"{entry_type}.{entry_id}"
+    await get_channel_layer().groups_send(
+        [ChannelGroups.entry(entry_type, entry_id)],
+        "entry_update",
+        {"entry_type": entry_type, "id": entry_id, "key": key, "entry": doc},
+    )

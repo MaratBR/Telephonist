@@ -1,5 +1,7 @@
 from typing import *
 
+from loguru import logger
+
 from server.internal.channels import get_channel_layer
 from server.internal.telephonist.utils import ChannelGroups
 from server.models.auth import User
@@ -9,22 +11,22 @@ EventSourceType = Union[User, Application]
 
 
 async def publish_event(event: Event) -> Event:
-    subscribers = await Application.find_subscribed_id(event.event_type)
-    channels = [
-        *map(ChannelGroups.app_events, subscribers),
-        ChannelGroups.EVENTS,
-        ChannelGroups.event(event.event_type),
-        ChannelGroups.task_events(event.related_task)
-        if event.related_task
-        else ChannelGroups.GLOBAL_EVENTS,
-    ]
+    logger.debug("publishing event {event}", event=event)
     await get_channel_layer().groups_send(
-        channels,
+        [
+            ChannelGroups.EVENTS,
+            ChannelGroups.for_event_key(event.event_key),
+            ChannelGroups.for_event_type(event.event_type),
+            ChannelGroups.for_task_event(event.related_task)
+            if event.related_task
+            else ChannelGroups.GLOBAL_EVENTS,
+        ],
         "new_event",
         {
             "event_type": event.event_type,
             "source_ip": event.publisher_ip,
-            "source_id": event.source_id,
+            "user_id": event.user_id,
+            "app_id": event.app_id,
             "data": event.data,
             "related_task": event.related_task,
             "source_type": event.source_type,

@@ -16,7 +16,7 @@ JWT_REFRESH_COOKIE = "jwt.refresh"
 class HybridLoginData(BaseModel):
     login: str
     password: str
-    hybrid: bool = False
+    hybrid: bool = True
 
 
 class TokenResponse(JSONResponse):
@@ -52,6 +52,8 @@ class TokenResponse(JSONResponse):
                 path=refresh_cookie_path,
                 httponly=True,
                 max_age=settings.refresh_token_lifetime.total_seconds(),
+                secure=settings.cookies_policy.lower() == "none",
+                samesite=settings.cookies_policy,
             )
 
         if check_string:
@@ -60,6 +62,8 @@ class TokenResponse(JSONResponse):
                 check_string,
                 httponly=True,
                 max_age=settings.refresh_token_lifetime.total_seconds(),
+                secure=settings.cookies_policy.lower() == "none",
+                samesite=settings.cookies_policy,
             )
 
 

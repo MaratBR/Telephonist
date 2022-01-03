@@ -9,7 +9,7 @@ class IdProjection(BaseModel):
 
 
 class Identifier(str):
-    regex = re.compile(r"^[\d\w%^$#&\- ]+$", re.IGNORECASE)
+    regex = re.compile(r"^[\d\w%^$#&\-]+$", re.IGNORECASE | re.UNICODE)
 
     @classmethod
     def __get_validators__(cls):
