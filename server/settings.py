@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     hanging_connections_policy: str = "remove"
     allow_custom_application_types: bool = False
     cookies_policy: str = "None"
+    use_capped_collection_for_logs: bool = True
+    logs_capped_collection_max_size_mb: int = 2 ** 16  # 2**15 mb == 64 GiB
 
     class Config:
         env_prefix = "telephonist_"

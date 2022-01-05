@@ -3,11 +3,12 @@ from datetime import timedelta
 from typing import Optional
 
 import fastapi
-from fastapi import Body, Header, HTTPException
+from fastapi import Body, Cookie, Header, HTTPException
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
 from starlette import status
 from starlette.requests import Request
+from starlette.responses import Response
 
 from server.internal.auth.dependencies import CurrentUser, UserToken
 from server.internal.auth.schema import (
@@ -15,7 +16,7 @@ from server.internal.auth.schema import (
     HybridLoginData,
     TokenResponse,
 )
-from server.models.auth import RefreshToken, TokenModel, User, UserView
+from server.models.auth import AuthLog, RefreshToken, TokenModel, User, UserView
 from server.settings import settings
 
 auth_router = fastapi.routing.APIRouter(tags=["auth"], prefix="/auth")
@@ -73,6 +74,7 @@ async def login_user(credentials: HybridLoginData, request: Request):
                 token_type="password-reset", lifetime=timedelta(minutes=15)
             )
             response = TokenResponse(None, None, password_reset_token=password_token)
+            log_record = AuthLog(user_id=user.id, event="password-reset-login")
         else:
             db_token, refresh_token = await RefreshToken.create_token(
                 user, settings.refresh_token_lifetime
@@ -85,6 +87,10 @@ async def login_user(credentials: HybridLoginData, request: Request):
                 refresh_as_cookie=credentials.hybrid,
                 check_string=check_string,
             )
+            log_record = AuthLog(
+                user_id=user.id, event="hybrid-login" if credentials.hybrid else "login"
+            )
+        await log_record.insert()
         return response
     raise HTTPException(401, "User with given credentials not found")
 
@@ -120,9 +126,35 @@ async def refresh(
         await token.delete()
         refresh_token = (await RefreshToken.create_token(user, settings.refresh_token_lifetime))[1]
 
+    await AuthLog(
+        user_id=user.id, event="hybrid-refresh" if refresh_as_cookie else "refresh"
+    ).insert()
+
     return TokenResponse(
         user.create_token(),
         refresh_token if settings.rotate_refresh_token else None,
         refresh_cookie_path=request.scope["router"].url_path_for("refresh"),
         refresh_as_cookie=refresh_as_cookie,
     )
+
+
+@auth_router.post("/logout")
+async def logout(refresh_token: Cookie(alias=JWT_REFRESH_COOKIE)):
+    if refresh_token:
+        token = await RefreshToken.find_valid(refresh_token)
+        await token.delete()
+        await AuthLog(user_id=token.user_id, event="explicit-logout").insert()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class RevokeRefreshToken(BaseModel):
+    token: str
+
+
+@auth_router.post("/revoke-token")
+async def revoke_refresh_token(body: RevokeRefreshToken, user_token: TokenModel = UserToken()):
+    token = await RefreshToken.find_valid(body.token)
+    if token:
+        await token.delete()
+        await AuthLog(user_id=user_token.sub, event="revoke-refresh-token").insert()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

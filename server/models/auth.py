@@ -11,7 +11,7 @@ from pymongo.errors import DuplicateKeyError
 
 from server.database import register_model
 from server.internal.auth.utils import (
-    create_static_key,
+    create_resource_key,
     decode_token,
     encode_token,
     hash_password,
@@ -180,6 +180,10 @@ class RefreshToken(Document):
         return await cls.find(cls.id == cls._make_token_id(token)).count() > 0
 
     @classmethod
+    async def delete_token(cls, token: str):
+        await cls.find(cls.id == cls._make_token_id(token)).delete()
+
+    @classmethod
     async def find_valid(cls, token: str) -> Optional["RefreshToken"]:
         return await cls.find_one(
             cls.id == cls._make_token_id(token),
@@ -189,7 +193,7 @@ class RefreshToken(Document):
 
     @classmethod
     async def create_token(cls, user: User, lifetime: timedelta) -> Tuple["RefreshToken", str]:
-        token = create_static_key(40)
+        token = create_resource_key(40)
         refresh_token = cls(
             user_id=user.id,
             expiration_date=datetime.utcnow() + lifetime,
@@ -207,3 +211,14 @@ class RefreshToken(Document):
     def _make_token_id(token: str):
         digest = hashlib.sha256(token.encode("ascii")).digest()
         return base64.urlsafe_b64encode(digest)[:43].decode("ascii")
+
+
+@register_model
+class AuthLog(Document):
+    event: str
+    user_id: PydanticObjectId
+    ip_address: str
+    user_agent: str
+
+    class Collection:
+        name = "auth-login"

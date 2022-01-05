@@ -1,21 +1,16 @@
 import enum
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, List, Optional
 
-from beanie import Document, PydanticObjectId
+from beanie import Document, Indexed, PydanticObjectId
 from beanie.odm.queries.find import FindMany
 
 from server.database import register_model
-
-
-class AppLogType(enum.Enum):
-    STDOUT = "stdout"
-    STDERR = "stderr"
-    CUSTOM = "custom"
-    EXCEPTION = "exception"
+from server.settings import settings
 
 
 class Severity(enum.IntEnum):
+    UNKNOWN = -1
     NONE = 0
     DEBUG = 10
     INFO = 20
@@ -27,42 +22,36 @@ class Severity(enum.IntEnum):
 @register_model
 class AppLog(Document):
     app_id: PydanticObjectId
-    type: AppLogType
-    severity: Severity
+    severity: Severity = Severity.UNKNOWN
     body: Any
     meta: Optional[Any] = None
+    related_task: Optional[str]
+    seq_id: Optional[PydanticObjectId]
 
-    class Collection:
-        name = "app_logs"
+    @staticmethod
+    def __motor_create_collection_params__():
+        if settings.use_capped_collection_for_logs:
+            return {"capped": True, "size": settings.logs_capped_collection_max_size_mb * 2 ** 20}
 
     @classmethod
     async def _log(
         cls,
         body: Any,
         app_id: PydanticObjectId,
-        log_type: AppLogType,
         severity: Severity,
         meta: Optional[Any],
     ):
         await cls(
             app_id=app_id,
-            type=log_type,
             severity=severity,
             meta=meta,
             body=body,
-        ).save()
-
-    @classmethod
-    def stdout(
-        cls,
-        body: str,
-        app_id: PydanticObjectId,
-        severity: Severity = Severity.INFO,
-        meta: Optional[Any] = None,
-    ):
-        return cls._log(body, app_id, AppLogType.STDOUT, severity, meta)
+        ).insert()
 
     @classmethod
     def find_before(cls, before: datetime) -> FindMany["AppLog"]:
         oid = hex(int(before.timestamp()))[2:] + "0000000000000000"
         return cls.find({"_id": {"$lt": oid}})
+
+    class Collection:
+        name = "app_logs"

@@ -10,7 +10,7 @@ from beanie.operators import Set as SetOp
 from pydantic import BaseModel, Field
 
 from server.database import register_model
-from server.internal.auth.utils import static_key_factory
+from server.internal.auth.utils import resource_key_factory
 from server.models.common import IdProjection
 
 
@@ -27,7 +27,7 @@ class Application(Document):
     settings: Optional[Dict[str, Any]]
     settings_revision: Optional[UUID] = None
     tags: List[str] = Field(default_factory=list)
-    access_key: str = Field(default_factory=static_key_factory(key_type="application"))
+    access_key: str = Field(default_factory=resource_key_factory(key_type="application"))
 
     @property
     def has_connection(self):

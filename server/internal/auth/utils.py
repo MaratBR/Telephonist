@@ -6,6 +6,16 @@ from passlib.context import CryptContext
 
 from server.settings import settings
 
+__all__ = (
+    "hash_password",
+    "verify_password",
+    "decode_token",
+    "encode_token",
+    "create_resource_key",
+    "resource_key_factory",
+    "parse_resource_key",
+)
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
@@ -42,15 +52,23 @@ def encode_token(data: dict):
     )
 
 
-def create_static_key(length: int = 20, token_type: Optional[str] = None):
+def create_resource_key(length: int = 20, token_type: Optional[str] = None):
     tok = secrets.token_urlsafe(length)
     if token_type is not None:
         tok = token_type + "." + tok
     return tok
 
 
-def static_key_factory(length: int = 12, key_type: Optional[str] = None):
+def resource_key_factory(length: int = 12, key_type: Optional[str] = None):
     def _token_factory_function():
-        return create_static_key(length, key_type)
+        return create_resource_key(length, key_type)
 
     return _token_factory_function
+
+
+def parse_resource_key(key: str) -> Tuple[str, str]:
+    try:
+        type_, id_ = key.split(".")
+        return type_, id_
+    except ValueError:
+        raise ValueError("invalid resource key")

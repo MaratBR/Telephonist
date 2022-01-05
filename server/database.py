@@ -3,6 +3,7 @@ from typing import Optional, TypeVar
 
 import motor.motor_asyncio
 from beanie import Document, init_beanie
+from pymongo.errors import CollectionInvalid
 
 from server.settings import settings
 
@@ -27,7 +28,20 @@ def register_model(model: TModelType) -> TModelType:
 async def init_database():
     global _client
     _client = motor.motor_asyncio.AsyncIOMotorClient(settings.db_url)
-    await init_beanie(database=_client.telephonist, document_models=list(_models))
+    db = _client.telephonist
+    for model in _models:
+        if hasattr(model, "__motor_create_collection_params__"):
+            params = getattr(model, "__motor_create_collection_params__")()
+            if params:
+                try:
+                    try:
+                        name = model.Collection.name
+                    except AttributeError:
+                        name = model.__name__
+                    await db.create_collection(name, **params)
+                except CollectionInvalid:
+                    pass
+    await init_beanie(database=db, document_models=list(_models))
 
     for model in _models:
         if hasattr(model, "on_database_ready") and inspect.iscoroutinefunction(

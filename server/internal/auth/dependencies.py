@@ -1,13 +1,15 @@
 import hashlib
+from functools import partial, wraps
 from typing import *
 
-from fastapi import Cookie, Depends
+from fastapi import Cookie, Depends, params
 from jose import JWTError
 from pydantic import BaseModel, ValidationError
 from starlette.requests import Request
 
 from server.internal.auth.exceptions import AuthError, InvalidToken, UserNotFound
 from server.internal.auth.schema import JWT_CHECK_HASH_COOKIE, bearer
+from server.internal.auth.utils import parse_resource_key
 from server.models.auth import BlockedAccessToken, TokenModel, User
 from server.settings import settings
 
@@ -83,9 +85,10 @@ def get_token_dependency_function(  # noqa N802
     if not required:
         require_token_dep = get_token_dependency
 
-        def get_token_dependency(token: TokenModel = Token()):
+        @wraps(require_token_dep)
+        async def get_token_dependency(*args, **kwargs):
             try:
-                return require_token_dep(token)
+                return await require_token_dep(*args, **kwargs)
             except InvalidToken:
                 return None
 
@@ -124,32 +127,41 @@ def CurrentUser(required: bool = True):  # noqa
 
 
 class ResourceKey(BaseModel):
-    resource_type: Optional[str]
-    resource_key: str
+    key: str
+    resource_type: str
 
     @classmethod
-    def Depends(cls, *resource_types: str, required: bool = True) -> "ResourceKey":  # noqa
-        if "*" in resource_types:
-            resource_types = ("*",)
+    def required(cls, allowed_types: Union[List[str], str]):
+        if isinstance(allowed_types, str):
+            allowed_types = [allowed_types]
 
-        def _get_resource_key(token: Optional[str] = Depends(bearer)):
+        def get_resource_key_dependency(token: Optional[str] = Depends(bearer)):
+            if token:
+                try:
+                    resource_type, _ = parse_resource_key(token)
+                except ValueError:
+                    raise AuthError("invalid resource key")
+
+                if resource_type not in allowed_types:
+                    raise AuthError(
+                        "invalid resource key type. allowed resource key types are: "
+                        + ", ".join(allowed_types)
+                    )
+                return cls(key=token, resource_type=resource_type)
+            raise AuthError("resource key is missing")
+
+        return get_resource_key_dependency
+
+    @classmethod
+    @wraps(required)
+    def optional(cls, *args, **kwargs):
+        dep = cls.required(*args, **kwargs)
+
+        @wraps(dep)
+        def _optional(*a, **kw):
             try:
-                if token is None:
-                    raise InvalidToken("resource key is missing")
-                else:
-                    if "." in token:
-                        resource_type = token.split(".")[0]
-                    else:
-                        resource_type = None
-                    if "*" not in resource_types and resource_type not in resource_types:
-                        raise InvalidToken("resource key is of the wrong type")
-                return cls(resource_type=resource_type, resource_key=token)
-            except (InvalidToken, ValidationError, ValueError) as exc:
-                if required:
-                    if isinstance(exc, ValidationError):
-                        exc = InvalidToken("failed to validate resource key", exc)
-                    raise exc
-                else:
-                    return None
+                return dep(*a, **kw)
+            except AuthError:
+                return None
 
-        return Depends(_get_resource_key)
+        return _optional

@@ -1,6 +1,7 @@
 import hashlib
 import inspect
 import json
+import time
 from datetime import datetime, timedelta
 from functools import wraps
 from typing import *
@@ -25,10 +26,7 @@ from server.internal.channels.hub import (
     bind_message,
     ws_controller,
 )
-from server.internal.channels.wscode import (
-    WSC_INCONSISTENT_SIGNATURE,
-    WSC_SETTINGS_TYPE_NOT_FOUND,
-)
+from server.internal.channels.wscode import WSC_INCONSISTENT_SIGNATURE
 from server.internal.telephonist.application import notify_new_application_settings
 from server.internal.telephonist.utils import ChannelGroups, Errors
 from server.models.common import IdProjection, Pagination, PaginationResult
@@ -80,10 +78,13 @@ class ApplicationsPagination(Pagination):
 
 @router.get("", responses={200: {"model": PaginationResult[ApplicationView]}})
 async def get_applications(
-    _=UserToken(),
+    # _=UserToken(),
     args: ApplicationsPagination = Depends(),
 ) -> PaginationResult[ApplicationView]:
-    return await args.paginate(Application, ApplicationView)
+    start = time.time_ns()
+    result = await args.paginate(Application, ApplicationView)
+    elapsed = (time.time_ns() - start) / 1000000
+    return {"total": elapsed}
 
 
 @router.post("", status_code=201, responses={201: {"model": IdProjection}})
@@ -296,7 +297,7 @@ def _if_ready_only(f):
 
 @ws_controller(router, "/ws")
 class AppReportHub(Hub):
-    rk: Optional[ResourceKey] = ResourceKey.Depends("application", required=False)
+    rk: Optional[ResourceKey] = Depends(ResourceKey.optional("application"))
     client_name: Optional[str] = Header(None, alias="user-agent")
     _app_id: PydanticObjectId
     _connection_info: Optional[ConnectionInfo] = None
@@ -317,7 +318,7 @@ class AppReportHub(Hub):
         self._settings_allowed = app.are_settings_allowed
 
     def _app(self):
-        return Application.find_by_key(self.rk.resource_key)
+        return Application.find_by_key(self.rk.key)
 
     async def __create_connection(self, fingerprint: str, os: str):
         self._connection_info = ConnectionInfo(

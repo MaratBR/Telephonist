@@ -6,7 +6,6 @@ from beanie import PydanticObjectId
 
 from server.internal.channels import get_channel_layer
 from server.internal.telephonist.utils import ChannelGroups
-from server.models.telephonist import Application
 
 
 async def notify_new_application_settings(

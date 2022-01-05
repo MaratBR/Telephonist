@@ -10,15 +10,24 @@ from server.database import register_model
 class Event(Document):
     user_id: Optional[PydanticObjectId]
     app_id: Optional[PydanticObjectId]
-    event_key: Indexed(str)
-    event_type: Indexed(str)
+    event_key: str
+    event_type: str
     related_task: Optional[str]
     data: Optional[Any] = None
     publisher_ip: Optional[str]
+    sequence_id: Optional[PydanticObjectId]
 
     class Collection:
         name = "events"
-        indexes = ["related_task_type"]
+        indexes = [
+            "related_task",
+            "sequence_id",
+            "event_type",
+            "event_key",
+            "publisher_ip",
+            "app_id",
+            "user_id",
+        ]
 
     @classmethod
     def by_type(cls, event_type: str):
