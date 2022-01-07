@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import *
 
 import fastapi
@@ -5,14 +6,18 @@ from beanie import PydanticObjectId
 from beanie.operators import In
 from fastapi import Body, Depends, HTTPException
 from pydantic import BaseModel, Field
-from starlette.background import BackgroundTasks
 from starlette.requests import Request
 
 import server.internal.telephonist.events as events_internal
-from server.internal.auth.dependencies import ResourceKey, UserToken
-from server.models.auth import TokenModel
+from server.internal.auth.dependencies import AccessToken, ResourceKey
+from server.models.auth import UserTokenModel
 from server.models.common import Identifier, Pagination
-from server.models.telephonist import Application, Event, EventSequence
+from server.models.telephonist import (
+    Application,
+    Event,
+    EventSequence,
+    EventSequenceState,
+)
 from server.utils.common import QueryDict
 
 router = fastapi.APIRouter(tags=["events"], prefix="/events")
@@ -27,7 +32,7 @@ class EventsPagination(Pagination):
     ordered_by_options = {"event_type", "_id"}
 
 
-@router.get("/", dependencies=[UserToken()])
+@router.get("/", dependencies=[AccessToken()])
 async def get_events(
     pagination: EventsPagination = Depends(),
     filter_data=QueryDict(EventsFilter),
@@ -43,7 +48,6 @@ async def get_events(
 
 class PublishEventRequest(BaseModel):
     name: Identifier
-    related_task: Optional[Identifier]
     data: Optional[Any]
     sequence_id: Optional[PydanticObjectId]
 
@@ -57,45 +61,43 @@ async def publish_event(event: Event):
 async def publish_event_endpoint(
     request: Request,
     body: PublishEventRequest = Body(...),
-    user_token: Optional[TokenModel] = UserToken(required=False),
     rk: ResourceKey = Depends(ResourceKey.optional("application")),
 ):
-    if user_token is None:
-        user_id = None
-        app = await Application.find_by_key(rk.key)
-        app_id = app.id
-        if app.app_host_id:
-            raise HTTPException(401, "this applications belongs to the application host")
-    else:
-        app_id = None
-        user_id = user_token.sub
-    event_key = f"{body.name}@{body.related_task}" if body.related_task else body.name
-
-    if body.sequence_id and app_id is not None:
+    app = await Application.find_by_key(rk.key)
+    if app is None:
+        raise HTTPException(401, "application with given key does not exist")
+    if body.sequence_id:
         seq = await EventSequence.get(body.sequence_id)
-        if seq is None or seq.app_id != app_id:
+        if seq is None or seq.app_id != app.id:
             raise HTTPException(
                 401,
                 "the sequence you try to publish to does not exist or does not belong to the"
                 " current application",
             )
+        event_key = f"{body.name}@{seq.related_task}"
+        related_task = seq.related_task
+    else:
+        event_key = body.name
+        related_task = None
 
     event = Event(
-        user_id=user_id,
-        app_id=app_id,
+        app_id=app.id,
         event_type=body.name,
         event_key=event_key,
         data=body.data,
         publisher_ip=request.client.host,
-        related_task=body.related_task,
+        related_task=related_task,
         sequence_id=body.sequence_id,
     )
     await publish_event(event)
-    return {"details": "Published"}
+    return {"detail": "Published"}
 
 
 class CreateSequence(BaseModel):
-    name: Optional[str]
+    meta: Optional[Dict[str, Any]]
+    description: Optional[str]
+    related_task: Identifier
+    custom_name: Optional[str]
 
 
 @router.post("/sequence")
@@ -106,7 +108,13 @@ async def create_sequence(
     app = await Application.find_by_key(rk.key)
     if app is None:
         raise HTTPException(401, "not allowed")
-    name = body.name if body else None
-    sequence = EventSequence(name=name, app_id=app.id)
+    name = body.custom_name or (body.related_task + datetime.now().strftime(" (%Y.%m.%d %H:%M:%S)"))
+    sequence = EventSequence(
+        name=name,
+        app_id=app.id,
+        meta=body.meta,
+        description=body.description,
+        related_task=body.related_task,
+    )
     await sequence.save()
     return {"_id": sequence.id}

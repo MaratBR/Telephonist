@@ -3,7 +3,7 @@ from typing import *
 from loguru import logger
 
 from server.internal.channels import get_channel_layer
-from server.internal.telephonist.utils import ChannelGroups
+from server.internal.telephonist.utils import CG
 from server.models.auth import User
 from server.models.telephonist import Application, Event
 
@@ -14,12 +14,10 @@ async def notify_event(event: Event):
     logger.debug("publishing event {event}", event=event)
     await get_channel_layer().groups_send(
         [
-            ChannelGroups.EVENTS,
-            ChannelGroups.for_event_key(event.event_key),
-            ChannelGroups.for_event_type(event.event_type),
-            ChannelGroups.for_task_event(event.related_task)
-            if event.related_task
-            else ChannelGroups.GLOBAL_EVENTS,
+            CG.application_events(event.app_id),
+            CG.events(event_type=event.event_type, task_name=event.related_task or "_"),
+            CG.events(event_type=event.event_type),
+            CG.events(task_name=event.related_task or "_"),
         ],
         "new_event",
         {
@@ -37,7 +35,7 @@ async def notify_event(event: Event):
 
 async def publish_entry_update(entry_type: str, entry_id: str, entry: dict):
     await get_channel_layer().groups_send(
-        ChannelGroups.entry(entry_type, entry_id),
+        CG.entry(entry_type, entry_id),
         "entry_update",
         {"entry_name": "app", "id": entry_id, "entry": entry},
     )

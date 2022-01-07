@@ -1,16 +1,21 @@
 import secrets
+from datetime import timedelta
 from typing import *
 
-from jose import jwt
+import branca
+import msgpack
+from beanie import PydanticObjectId
+from jose import JWTError, jwt
 from passlib.context import CryptContext
 
+from server.internal.auth.exceptions import InvalidToken
 from server.settings import settings
 
 __all__ = (
     "hash_password",
     "verify_password",
-    "decode_token",
-    "encode_token",
+    "decode_token_raw",
+    "encode_token_raw",
     "create_resource_key",
     "resource_key_factory",
     "parse_resource_key",
@@ -27,28 +32,27 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def decode_token(token: str) -> dict:
+def decode_token_raw(token: str) -> dict:
     """
-    :raises JWTError: If the signature is invalid in any way.
-    :raises ExpiredSignatureError: If the signature has expired.
-    :raises JWTClaimsError: If any claim is invalid in any way.
-
     :param token: токен
     :return: словарь с данными токена
     """
-    return jwt.decode(
-        token,
-        settings.jwt_secret,
-        issuer=settings.jwt_issuer,
-        algorithms=[jwt.ALGORITHMS.HS256],
-        options={"require_sub": True},
-    )
+    try:
+        return jwt.decode(
+            token,
+            settings.secret,
+            issuer=settings.jwt_issuer,
+            algorithms=[jwt.ALGORITHMS.HS256],
+            options={"require_sub": True},
+        )
+    except JWTError as err:
+        raise InvalidToken(str(err))
 
 
-def encode_token(data: dict):
+def encode_token_raw(data: dict):
     return jwt.encode(
         {**data, "iss": settings.jwt_issuer},
-        settings.jwt_secret,
+        settings.secret,
     )
 
 

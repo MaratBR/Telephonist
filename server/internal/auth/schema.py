@@ -6,7 +6,7 @@ from fastapi.security.utils import get_authorization_scheme_param
 from pydantic import BaseModel
 from starlette.responses import JSONResponse
 
-from server.models.auth import TokenModel
+from server.models.auth import UserTokenModel
 from server.settings import settings
 
 JWT_CHECK_HASH_COOKIE = "chk"
@@ -22,26 +22,20 @@ class HybridLoginData(BaseModel):
 class TokenResponse(JSONResponse):
     def __init__(
         self,
-        token: Optional[TokenModel],
+        token: Optional[str],
         refresh_token: Optional[str],
-        password_reset_token: Optional[TokenModel] = None,
+        password_reset_token: str = None,
         refresh_cookie_path: Optional[str] = None,
         refresh_as_cookie: bool = False,
         check_string: Optional[str] = None,
     ):
-        signature = None
-        if token:
-            token = token.encode()
-
         super(TokenResponse, self).__init__(
             {
                 "access_token": token,
                 "refresh_token": None if refresh_as_cookie else refresh_token,
                 "token_type": "bearer",
                 "password_reset_required": password_reset_token is not None,
-                "password_reset_token": password_reset_token.encode()
-                if password_reset_token
-                else None,
+                "password_reset_token": password_reset_token if password_reset_token else None,
             }
         )
 

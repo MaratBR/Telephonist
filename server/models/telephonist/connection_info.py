@@ -33,7 +33,6 @@ class ConnectionInfo(Document):
     os: str
     is_connected: bool = False
     event_subscriptions: List[str] = Field(default_factory=list)
-    statuses: Dict[UUID, StatusEntry] = Field(default_factory=list)
     connection_state_fingerprint: str
 
     @classmethod

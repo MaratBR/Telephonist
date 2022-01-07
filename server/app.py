@@ -36,9 +36,12 @@ def create_app():
 
     @app.on_event("startup")
     async def _on_startup():
-        await init_database()
-        await start_backplane(settings.redis_url)
-        await get_channel_layer().start()
+        try:
+            await init_database()
+            await start_backplane(settings.redis_url)
+            await get_channel_layer().start()
+        except Exception as exc:
+            logger.exception(exc)
 
     @app.on_event("shutdown")
     async def _on_shutdown():
@@ -51,6 +54,3 @@ def create_app():
             raise
 
     return app
-
-
-app = create_app()

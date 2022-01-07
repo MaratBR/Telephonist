@@ -3,5 +3,5 @@ from .connection_info import ConnectionInfo, StatusEntry
 from .events import Event
 from .log import AppLog, Severity
 from .security_code import OneTimeSecurityCode
-from .sequence import EventSequence
+from .sequence import EventSequence, EventSequenceState
 from .server import Server

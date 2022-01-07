@@ -10,13 +10,16 @@ from starlette import status
 from starlette.requests import Request
 from starlette.responses import Response
 
-from server.internal.auth.dependencies import CurrentUser, UserToken
-from server.internal.auth.schema import (
-    JWT_REFRESH_COOKIE,
+from server.internal.auth.dependencies import AccessToken, CurrentUser
+from server.internal.auth.schema import JWT_REFRESH_COOKIE, TokenResponse
+from server.models.auth import (
+    AuthLog,
     HybridLoginData,
-    TokenResponse,
+    RefreshToken,
+    User,
+    UserTokenModel,
+    UserView,
 )
-from server.models.auth import AuthLog, RefreshToken, TokenModel, User, UserView
 from server.settings import settings
 
 auth_router = fastapi.routing.APIRouter(tags=["auth"], prefix="/auth")
@@ -50,7 +53,7 @@ class NewPassword(BaseModel):
 @auth_router.post("/set-password")
 async def set_password(
     body: NewPassword,
-    token: TokenModel = UserToken(token_type="password-reset"),
+    token: UserTokenModel = AccessToken(token_type="password-reset"),
 ):
     user = await User.get(token.sub)
     if user is None or (
@@ -74,23 +77,27 @@ async def login_user(credentials: HybridLoginData, request: Request):
                 token_type="password-reset", lifetime=timedelta(minutes=15)
             )
             response = TokenResponse(None, None, password_reset_token=password_token)
-            log_record = AuthLog(user_id=user.id, event="password-reset-login")
+            await AuthLog.log(
+                "password-reset-login",
+                user.id,
+                request.headers.get("user-agent"),
+                request.client.host,
+            )
         else:
             db_token, refresh_token = await RefreshToken.create_token(
                 user, settings.refresh_token_lifetime
             )
             check_string = secrets.token_urlsafe(10) if credentials.hybrid else None
             response = TokenResponse(
-                user.create_token(check_string=check_string),
+                user.create_token(check_string=check_string).encode(),
                 refresh_token,
                 refresh_cookie_path=request.scope["router"].url_path_for("refresh"),
                 refresh_as_cookie=credentials.hybrid,
                 check_string=check_string,
             )
-            log_record = AuthLog(
-                user_id=user.id, event="hybrid-login" if credentials.hybrid else "login"
+            await AuthLog.log(
+                "hybrid-login", user.id, request.headers.get("user-agent"), request.client.host
             )
-        await log_record.insert()
         return response
     raise HTTPException(401, "User with given credentials not found")
 
@@ -126,9 +133,12 @@ async def refresh(
         await token.delete()
         refresh_token = (await RefreshToken.create_token(user, settings.refresh_token_lifetime))[1]
 
-    await AuthLog(
-        user_id=user.id, event="hybrid-refresh" if refresh_as_cookie else "refresh"
-    ).insert()
+    await AuthLog.log(
+        "hybrid-refresh" if refresh_as_cookie else "refresh",
+        user.id,
+        request.headers.get("user-agent"),
+        request,
+    )
 
     return TokenResponse(
         user.create_token(),
@@ -139,11 +149,13 @@ async def refresh(
 
 
 @auth_router.post("/logout")
-async def logout(refresh_token: Cookie(alias=JWT_REFRESH_COOKIE)):
+async def logout(request: Request, refresh_token: str = Cookie(..., alias=JWT_REFRESH_COOKIE)):
     if refresh_token:
         token = await RefreshToken.find_valid(refresh_token)
         await token.delete()
-        await AuthLog(user_id=token.user_id, event="explicit-logout").insert()
+        await AuthLog.log(
+            "explicit-logout", token.user_id, request.headers.get("user-agent"), request
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -152,9 +164,25 @@ class RevokeRefreshToken(BaseModel):
 
 
 @auth_router.post("/revoke-token")
-async def revoke_refresh_token(body: RevokeRefreshToken, user_token: TokenModel = UserToken()):
+async def revoke_refresh_token(
+    request: Request,
+    body: RevokeRefreshToken,
+    user_token: UserTokenModel = AccessToken(),
+):
     token = await RefreshToken.find_valid(body.token)
     if token:
         await token.delete()
-        await AuthLog(user_id=user_token.sub, event="revoke-refresh-token").insert()
+        await AuthLog.log(
+            "revoke-refresh-token", token.user_id, request.headers.get("user-agent"), request
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class ResetPassword(BaseModel):
+    password_reset_token: str
+    new_password: str
+
+
+@auth_router.post("/reset-password")
+async def reset_password(token, body: ResetPassword):
+    pass

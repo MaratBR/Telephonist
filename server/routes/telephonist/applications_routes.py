@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, ValidationError
 from starlette import status
 
 from server import VERSION
-from server.internal.auth.dependencies import ResourceKey, UserToken
+from server.internal.auth.dependencies import AccessToken, ResourceKey
 from server.internal.channels import get_channel_layer, wscode
 from server.internal.channels.hub import (
     Hub,
@@ -28,7 +28,7 @@ from server.internal.channels.hub import (
 )
 from server.internal.channels.wscode import WSC_INCONSISTENT_SIGNATURE
 from server.internal.telephonist.application import notify_new_application_settings
-from server.internal.telephonist.utils import ChannelGroups, Errors
+from server.internal.telephonist.utils import CG, Errors
 from server.models.common import IdProjection, Pagination, PaginationResult
 from server.models.telephonist import (
     Application,
@@ -82,13 +82,11 @@ async def get_applications(
     args: ApplicationsPagination = Depends(),
 ) -> PaginationResult[ApplicationView]:
     start = time.time_ns()
-    result = await args.paginate(Application, ApplicationView)
-    elapsed = (time.time_ns() - start) / 1000000
-    return {"total": elapsed}
+    return await args.paginate(Application, ApplicationView)
 
 
 @router.post("", status_code=201, responses={201: {"model": IdProjection}})
-async def create_application(_=UserToken(), body: CreateApplication = Body(...)):
+async def create_application(_=AccessToken(), body: CreateApplication = Body(...)):
     if (
         body.application_type not in (Application.ARBITRARY_TYPE, Application.HOST_TYPE)
         and not settings.allow_custom_application_types
@@ -128,7 +126,7 @@ async def get_application(app_name: str):
     )
 
 
-@router.patch("/{app_id}", dependencies=[UserToken()])
+@router.patch("/{app_id}", dependencies=[AccessToken()])
 async def update_application(app_id: PydanticObjectId, body: UpdateApplication = Body(...)):
     app = Errors.raise404_if_none(await Application.get(app_id), _APPLICATION_NOT_FOUND)
     if app.is_hosted:
@@ -149,7 +147,7 @@ async def update_application(app_id: PydanticObjectId, body: UpdateApplication =
     return app
 
 
-@router.post("/{app_id}/settings", dependencies=[UserToken()])
+@router.post("/{app_id}/settings", dependencies=[AccessToken()])
 async def update_application_settings(app_id: PydanticObjectId, body: UpdateApplicationSettings):
     app = await Application.get(app_id)
     if app is None:
@@ -169,7 +167,7 @@ async def update_application_settings(app_id: PydanticObjectId, body: UpdateAppl
     return {"detail": "Settings updated successfully"}
 
 
-@router.post("/{app_id}/settings/reset", dependencies=[UserToken()])
+@router.post("/{app_id}/settings/reset", dependencies=[AccessToken()])
 async def delete_settings(app_id: PydanticObjectId):
     app = await Application.get(app_id)
     if app is None:
@@ -180,7 +178,9 @@ async def delete_settings(app_id: PydanticObjectId):
 
 
 @router.get("/{app_id}/logs")
-async def get_app_logs(app_id: PydanticObjectId, before: Optional[datetime] = None, _=UserToken()):
+async def get_app_logs(
+    app_id: PydanticObjectId, before: Optional[datetime] = None, _=AccessToken()
+):
     Errors.raise404_if_false(await Application.find({"_id": app_id}).exists())
     if before is None:
         logs = AppLog.find()
@@ -351,7 +351,7 @@ class AppReportHub(Hub):
 
     async def _send_connection(self):
         await self.channel_layer.group_send(
-            ChannelGroups.public_app(self._app_id),
+            CG.entry("application", self._app_id),
             "entry_update",
             {
                 "entry_name": "connection_info",
@@ -390,7 +390,6 @@ class AppReportHub(Hub):
 
         # region ensure that connection object exists
 
-        await self.connection.add_to_group(ChannelGroups.public_app(self._app_id))
         connection_info = await ConnectionInfo.find_one(
             ConnectionInfo.ip == self.websocket.client.host,
             ConnectionInfo.app_id == self._app_id,
@@ -443,7 +442,7 @@ class AppReportHub(Hub):
         if message.subscriptions:
             await self.set_subscriptions(message.subscriptions)
 
-        await self.connection.add_to_group(ChannelGroups.private_app(self._app_id))
+        await self.connection.add_to_group(CG.app(self._app_id))
         await self.send_message(
             "greetings",
             {
@@ -464,7 +463,7 @@ class AppReportHub(Hub):
     @bind_message("subscribe")
     @_if_ready_only
     async def subscribe(self, event_type: str):
-        await self.connection.add_to_group(ChannelGroups.for_event_type(event_type))
+        await self.connection.add_to_group(CG.events(event_type=event_type))
         await ConnectionInfo.find({"_id": self._connection_info.id}).update(
             {"$addToSet": {"event_subscriptions": event_type}}
         )
@@ -474,49 +473,9 @@ class AppReportHub(Hub):
     @bind_message("unsubscribe")
     @_if_ready_only
     async def unsubscribe(self, event_type: str):
-        await self.connection.remove_from_group(ChannelGroups.for_event_type(event_type))
+        await self.connection.remove_from_group(CG.events(event_type=event_type))
         await ConnectionInfo.find({"_id": self._connection_info.id}).update(
             {"$pull": {"event_subscriptions": event_type}}
         )
         await self._fetch_connection()
         await self._send_connection()
-
-    @bind_message("delete_process")
-    @_if_ready_only
-    async def delete_process(self, uid: UUID):
-        await self._fetch_connection()
-        if uid in self._connection_info.statuses:
-            del self._connection_info.statuses[uid]
-            await self.channel_layer.group_send(
-                ChannelGroups.public_app(self._app_id),
-                "connection_status_entry_delete",
-                {"uid": uid},
-            )
-            await self._connection_info.save_changes()
-
-    @bind_message("update_process")
-    @_if_ready_only
-    async def update_process(self, m: UpdateProcess):
-        await self._fetch_connection()
-        entry = self._connection_info.statuses.get(m.uid)
-        if entry:
-            entry.tasks_total = m.tasks_total or entry.tasks_total
-            entry.title = m.title or entry.title
-            entry.subtitle = m.subtitle or entry.subtitle
-            entry.is_intermediate = m.is_intermediate or entry.is_intermediate
-            entry.progress = m.progress or entry.progress
-        else:
-            entry = StatusEntry(
-                progress=m.progress,
-                tasks_total=m.tasks_total,
-                is_intermediate=m.is_intermediate or False,
-                title=m.title,
-                subtitle=m.subtitle,
-            )
-            self._connection_info[m.uid] = entry
-        await self._connection_info.save_changes()
-        await self.channel_layer.group_send(
-            ChannelGroups.public_app(self._app_id),
-            "connection_status_entry",
-            {"uid": m.uid, "entry": entry},
-        )

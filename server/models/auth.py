@@ -6,47 +6,27 @@ from typing import *
 import nanoid
 from beanie import Document, Indexed, PydanticObjectId
 from beanie.operators import Eq
+from jose import JWTError
 from pydantic import BaseModel, EmailStr, Field, root_validator, validator
 from pymongo.errors import DuplicateKeyError
+from starlette.datastructures import Address
+from starlette.requests import Request
 
 from server.database import register_model
 from server.internal.auth.utils import (
     create_resource_key,
-    decode_token,
-    encode_token,
+    decode_token_raw,
+    encode_token_raw,
     hash_password,
     verify_password,
 )
 from server.settings import settings
 
 
-class TokenModel(BaseModel):
-    sub: PydanticObjectId
-    exp: datetime
-    jti: str = Field(default_factory=nanoid.generate)
-    iat: datetime = Field(default_factory=datetime.now)
-    nbf: datetime = Field(default_factory=datetime.utcnow)
-    is_superuser: bool
-    token_type: str
-    username: str
-    check_string: Optional[str]
-
-    @validator("sub")
-    def _sub_to_str(cls, value: PydanticObjectId):
-        return str(value)
-
-    def encode(self) -> str:
-        return encode_token(self.dict())
-
-    @classmethod
-    def decode(cls, token: str):
-        data = decode_token(token)
-        return cls(**data)
-
-
 @register_model
 class User(Document):
-    username: Indexed(str, unique=True)
+    username: str
+    normalized_username: str
     email: Optional[EmailStr] = None
     password_hash: str
     disabled: bool = False
@@ -70,7 +50,7 @@ class User(Document):
     ):
         if check_string:
             check_string = hashlib.sha256(check_string.encode()).hexdigest()
-        return TokenModel(
+        return UserTokenModel(
             sub=self.id,
             token_type=token_type,
             is_superuser=self.is_superuser,
@@ -81,7 +61,9 @@ class User(Document):
 
     @classmethod
     async def find_user_by_credentials(cls, login: str, password: str):
-        user = await cls.find_one({"$or": [{"email": login}, {"username": login}]})
+        user = await cls.find_one(
+            {"$or": [{"email": login}, {"normalized_username": login.upper()}]}
+        )
         if user and verify_password(password, user.password_hash):
             return user
         return None
@@ -106,6 +88,8 @@ class User(Document):
     ):
         user = cls(
             username=username,
+            normalized_username=username.upper(),
+            display_name=username,
             password_hash=hash_password(password),
             email=email,
             password_reset_required=password_reset_required,
@@ -115,11 +99,12 @@ class User(Document):
 
     @classmethod
     async def on_database_ready(cls):
-        if settings.create_default_user:
-            try:
-                await cls.create_user(settings.default_username, settings.default_password)
-            except DuplicateKeyError:
-                pass
+        if not await cls.find(
+            cls.normalized_username == settings.default_username.upper()
+        ).exists():
+            await cls.create_user(
+                settings.default_username, settings.default_password, password_reset_required=True
+            )
 
     @classmethod
     async def anonymous(cls):
@@ -134,7 +119,7 @@ class User(Document):
 
     class Collection:
         name = "users"
-        indexes = ["email", "disabled"]
+        indexes = ["email", "disabled", "normalized_username"]
 
 
 class UserView(BaseModel):
@@ -222,3 +207,19 @@ class AuthLog(Document):
 
     class Collection:
         name = "auth-login"
+
+    @classmethod
+    async def log(
+        cls,
+        event: str,
+        user_id: PydanticObjectId,
+        user_agent: str,
+        ip_address_or_request: Union[str, Address, Request],
+    ):
+        if isinstance(ip_address_or_request, Request):
+            address = ip_address_or_request.client.host
+        elif isinstance(ip_address_or_request, Address):
+            address = ip_address_or_request.host
+        else:
+            address = ip_address_or_request
+        await cls(user_agent=user_agent, event=event, user_id=user_id, ip_address=address).insert()
