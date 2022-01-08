@@ -1,37 +1,43 @@
-from datetime import datetime
-from typing import ClassVar, Dict, List, Optional, Type, TypeVar, Union
+import abc
+from datetime import datetime, timedelta
+from functools import partial
+from typing import (
+    TYPE_CHECKING,
+    ClassVar,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    Protocol,
+    Type,
+    TypeVar,
+    Union,
+    get_args,
+)
 
 import nanoid
 from beanie import PydanticObjectId
-from jose import JWTError
-from pydantic import BaseModel, Field, ValidationError, root_validator
+from pydantic import BaseModel, Field, Json, ValidationError, root_validator, validator
+from pydantic.generics import GenericModel
 
-from server.internal.auth import decode_token_raw
 from server.internal.auth.exceptions import AuthError, InvalidToken
+from server.internal.auth.utils import decode_token_raw, encode_token_raw
 
 T = TypeVar("T", bound="TokenModel")
 
 
 class TokenModel(BaseModel):
     __token_type__: ClassVar[str]
-    registry: ClassVar[Dict[str, Type["TokenModel"]]]
+    registry: ClassVar[Dict[str, Type["TokenModel"]]] = {}
     exp: datetime
     iat: datetime = Field(default_factory=datetime.now)
+    jti: str = Field(default_factory=nanoid.generate)
 
     def __init_subclass__(cls, **kwargs):
-        if not hasattr(cls, "__token_type__"):
-            setattr(cls, "__token_type__", cls.__name__)
-        TokenModel.registry[cls.__token_type__] = cls
-
-    @root_validator(pre=True)
-    def _maybe_parse(cls, value):
-        if isinstance(value, str):
-            value = decode_token_raw(value)
-            token_type = value.pop("__token_type")
-            assert token_type != cls.__token_type__, (
-                "Invalid token type, required token type: " + cls.__token_type__
-            )
-        return value
+        if not isinstance(cls, abc.ABC):
+            if not hasattr(cls, "__token_type__"):
+                setattr(cls, "__token_type__", cls.__name__)
+            TokenModel.registry[cls.__token_type__] = cls
 
     @classmethod
     def decode(cls: Type[T], token_string: str) -> T:
@@ -39,12 +45,18 @@ class TokenModel(BaseModel):
             raise RuntimeError("decode method can only be called on derived classes")
         return cls._decode_types(token_string, allowed_types=[cls])
 
+    def encode(self):
+        data = self.dict()
+        data["__token_type"] = self.__class__.__token_type__
+        return encode_token_raw(data)
+
     @classmethod
     def _decode_types(
         cls, token_string: str, allowed_types: Union[List[Type["TokenModel"]]]
     ) -> "TokenModel":
+        allowed_types = [t.__token_type__ for t in allowed_types]
         data = decode_token_raw(token_string)
-        token_type = data.get("__token_type")
+        token_type = data.get("__token_type", "")
         if token_type is not None:
             del data["__token_type"]
         if token_type not in cls.registry:
@@ -59,17 +71,59 @@ class TokenModel(BaseModel):
             raise InvalidToken(str(err))
 
 
-class PasswordResetToken(TokenModel):
+TModel = TypeVar("TModel", bound=TokenModel)
+
+
+if TYPE_CHECKING:
+
+    class JWT(Generic[TModel]):
+        model: TModel
+
+else:
+
+    class JWTWrapper(str):
+        __model_type__: Type[TokenModel]
+
+        def __new__(cls, value: str, __model=None):
+            o = str.__new__(cls, value)
+            if __model is None:
+                __model = cls.__model_type__.decode(value)
+            o.model = __model
+            return o
+
+        @classmethod
+        def validate(cls, value: str):
+            if len(value.split(".")) != 3:
+                raise ValueError("invalid token format: must have 3 segments")
+            return cls(value)
+
+        @classmethod
+        def __get_validators__(cls):
+            yield cls.validate
+
+    class JWTMeta(type):
+        def __getitem__(self, item: Type[TokenModel]):
+            return type(f"JWT[{item.__name__}]", (JWTWrapper,), {"__model_type__": item})
+
+    class JWT(metaclass=JWTMeta):
+        pass
+
+
+class UserTokenBase(TokenModel, abc.ABC):
+    sub: PydanticObjectId
+
+    @validator("sub")
+    def _stringify_sub(cls, v):
+        return str(v)
+
+
+class PasswordResetToken(UserTokenBase):
     __token_type__ = "password-reset"
-    sub: PydanticObjectId
 
 
-class UserTokenModel(TokenModel):
+class UserTokenModel(UserTokenBase):
     __token_type__ = ""  # default token type
-    sub: PydanticObjectId
-    exp: datetime
     jti: str = Field(default_factory=nanoid.generate)
-    iat: datetime = Field(default_factory=datetime.now)
     nbf: datetime = Field(default_factory=datetime.utcnow)
     is_superuser: bool
     username: str

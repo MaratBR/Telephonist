@@ -17,12 +17,12 @@ from pydantic import BaseModel, Field, ValidationError
 from starlette import status
 
 from server import VERSION
-from server.internal.auth.dependencies import AccessToken, ResourceKey
-from server.internal.channels import get_channel_layer, wscode
+from server.internal.auth.dependencies import AccessToken
+from server.internal.auth.schema import bearer, require_bearer
+from server.internal.channels import get_channel_layer, wscode, WSTicket, WSTicketModel
 from server.internal.channels.hub import (
     Hub,
     HubAuthenticationException,
-    bind_layer_event,
     bind_message,
     ws_controller,
 )
@@ -37,16 +37,13 @@ from server.models.telephonist import (
     ConnectionInfo,
     OneTimeSecurityCode,
     Server,
-    StatusEntry,
 )
 from server.models.telephonist.application import DetailedApplicationView
 from server.models.telephonist.application_settings import (
-    application_type_allows_empty_settings,
     get_application_settings_model,
     get_default_settings_for_type,
 )
 from server.settings import settings
-from server.utils.common.json_schema import is_valid_jsonschema
 
 _APPLICATION_NOT_FOUND = "Application not not found"
 _APPLICATION_HOSTED = "Application is hosted"
@@ -76,12 +73,12 @@ class ApplicationsPagination(Pagination):
     ordered_by_options = {"name", "_id"}
 
 
-@router.get("", responses={200: {"model": PaginationResult[ApplicationView]}})
+@router.get(
+    "", responses={200: {"model": PaginationResult[ApplicationView]}}, dependencies=[AccessToken()]
+)
 async def get_applications(
-    # _=UserToken(),
     args: ApplicationsPagination = Depends(),
 ) -> PaginationResult[ApplicationView]:
-    start = time.time_ns()
     return await args.paginate(Application, ApplicationView)
 
 
@@ -107,6 +104,18 @@ async def create_application(_=AccessToken(), body: CreateApplication = Body(...
     )
     await app.save()
     return IdProjection(_id=app.id)
+
+
+@router.post("/issue-ws-ticket")
+async def issue_ws_ticket(key: str = Depends(require_bearer)):
+    app = await Application.find_by_key(key)
+    if app is None:
+        raise HTTPException(404, "application not found")
+    exp = datetime.now() + timedelta(minutes=2)
+    return {
+        "ticket": WSTicketModel[Application](exp=exp, sub=app.id).encode(),
+        "exp": exp
+    }
 
 
 @router.get("/{app_id}")
@@ -297,7 +306,7 @@ def _if_ready_only(f):
 
 @ws_controller(router, "/ws")
 class AppReportHub(Hub):
-    rk: Optional[ResourceKey] = Depends(ResourceKey.optional("application"))
+    ticket: WSTicketModel[Application] = WSTicket(Application)
     client_name: Optional[str] = Header(None, alias="user-agent")
     _app_id: PydanticObjectId
     _connection_info: Optional[ConnectionInfo] = None
@@ -309,7 +318,7 @@ class AppReportHub(Hub):
         self._ready = False
 
     async def authenticate(self):
-        if self.rk is None:
+        if self.ticket is None:
             raise HubAuthenticationException("resource key is missing")
         app = await self._app()
         if app is None:
@@ -318,7 +327,7 @@ class AppReportHub(Hub):
         self._settings_allowed = app.are_settings_allowed
 
     def _app(self):
-        return Application.find_by_key(self.rk.key)
+        return Application.get(self.ticket.sub)
 
     async def __create_connection(self, fingerprint: str, os: str):
         self._connection_info = ConnectionInfo(

@@ -3,22 +3,14 @@ from functools import partial, wraps
 from typing import *
 
 from fastapi import Cookie, Depends, params
-from jose import JWTError
 from pydantic import BaseModel, ValidationError
-from starlette.requests import Request
 
-from server.internal.auth.exceptions import AuthError, InvalidToken, UserNotFound
-from server.internal.auth.schema import JWT_CHECK_HASH_COOKIE, bearer
-from server.internal.auth.token import UserTokenModel
 from server.internal.auth.utils import parse_resource_key
 from server.models.auth import BlockedAccessToken, User
-from server.settings import settings
 
-
-def require_bearer(token: Optional[str] = Depends(bearer)):
-    if token is None:
-        raise InvalidToken("token is missing")
-    return token
+from .exceptions import AuthError, InvalidToken, UserNotFound
+from .schema import JWT_CHECK_HASH_COOKIE, bearer, require_bearer
+from .token import TokenModel, UserTokenModel
 
 
 def _require_user_token(
@@ -56,6 +48,23 @@ def AccessToken(  # noqa N802
     return Depends(_require_user_token if required else _get_user_token)
 
 
+def Token(token_model: Type[TokenModel], required: bool = True):  # noqa: N802
+    if required:
+
+        def dependency_function(token: Optional[str] = Depends(bearer)):
+            return token_model.decode(token)
+
+    else:
+
+        def dependency_function(token: Optional[str] = Depends(bearer)):
+            try:
+                return token_model.decode(token)
+            except AuthError:
+                return None
+
+    return Depends(dependency_function)
+
+
 async def _require_current_user(token: UserTokenModel = AccessToken()) -> User:
     if await BlockedAccessToken.is_blocked(token.jti):
         raise AuthError("This token has been revoked")
@@ -78,44 +87,3 @@ def CurrentUser(required: bool = True):  # noqa
         get = _current_user
 
     return Depends(get)
-
-
-class ResourceKey(BaseModel):
-    key: str
-    resource_type: str
-
-    @classmethod
-    def required(cls, allowed_types: Union[List[str], str]):
-        if isinstance(allowed_types, str):
-            allowed_types = [allowed_types]
-
-        def get_resource_key_dependency(token: Optional[str] = Depends(bearer)):
-            if token:
-                try:
-                    resource_type, _ = parse_resource_key(token)
-                except ValueError:
-                    raise AuthError("invalid resource key")
-
-                if resource_type not in allowed_types:
-                    raise AuthError(
-                        "invalid resource key type. allowed resource key types are: "
-                        + ", ".join(allowed_types)
-                    )
-                return cls(key=token, resource_type=resource_type)
-            raise AuthError("resource key is missing")
-
-        return get_resource_key_dependency
-
-    @classmethod
-    @wraps(required)
-    def optional(cls, *args, **kwargs):
-        dep = cls.required(*args, **kwargs)
-
-        @wraps(dep)
-        def _optional(*a, **kw):
-            try:
-                return dep(*a, **kw)
-            except AuthError:
-                return None
-
-        return _optional

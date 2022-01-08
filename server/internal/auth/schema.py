@@ -1,12 +1,14 @@
+from datetime import datetime
 from typing import Optional
 
-from fastapi import Header
+from fastapi import Depends, Header
 from fastapi.security import HTTPBasic, HTTPBearer
 from fastapi.security.utils import get_authorization_scheme_param
 from pydantic import BaseModel
+from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from server.models.auth import UserTokenModel
+from server.internal.auth.exceptions import InvalidToken
 from server.settings import settings
 
 JWT_CHECK_HASH_COOKIE = "chk"
@@ -28,10 +30,12 @@ class TokenResponse(JSONResponse):
         refresh_cookie_path: Optional[str] = None,
         refresh_as_cookie: bool = False,
         check_string: Optional[str] = None,
+        token_exp: Optional[datetime] = None,
     ):
         super(TokenResponse, self).__init__(
             {
                 "access_token": token,
+                "exp": str(token_exp),
                 "refresh_token": None if refresh_as_cookie else refresh_token,
                 "token_type": "bearer",
                 "password_reset_required": password_reset_token is not None,
@@ -73,3 +77,9 @@ class BearerSchema(HTTPBearer):
 
 bearer = BearerSchema()
 basic = HTTPBasic(auto_error=False)
+
+
+def require_bearer(token: Optional[str] = Depends(bearer)):
+    if token is None:
+        raise InvalidToken("token is missing")
+    return token

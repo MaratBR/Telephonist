@@ -5,19 +5,14 @@ import fastapi
 from beanie import PydanticObjectId
 from beanie.operators import In
 from fastapi import Body, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from starlette.requests import Request
 
 import server.internal.telephonist.events as events_internal
-from server.internal.auth.dependencies import AccessToken, ResourceKey
-from server.models.auth import UserTokenModel
+from server.internal.auth.dependencies import AccessToken
+from server.internal.auth.schema import bearer, require_bearer
 from server.models.common import Identifier, Pagination
-from server.models.telephonist import (
-    Application,
-    Event,
-    EventSequence,
-    EventSequenceState,
-)
+from server.models.telephonist import Application, Event, EventSequence
 from server.utils.common import QueryDict
 
 router = fastapi.APIRouter(tags=["events"], prefix="/events")
@@ -61,9 +56,9 @@ async def publish_event(event: Event):
 async def publish_event_endpoint(
     request: Request,
     body: PublishEventRequest = Body(...),
-    rk: ResourceKey = Depends(ResourceKey.optional("application")),
+    rk: str = Depends(require_bearer),
 ):
-    app = await Application.find_by_key(rk.key)
+    app = await Application.find_by_key(rk)
     if app is None:
         raise HTTPException(401, "application with given key does not exist")
     if body.sequence_id:
@@ -103,9 +98,9 @@ class CreateSequence(BaseModel):
 @router.post("/sequence")
 async def create_sequence(
     body: Optional[CreateSequence] = Body(None),
-    rk: ResourceKey = Depends(ResourceKey.required("application")),
+    rk: str = Depends(require_bearer),
 ):
-    app = await Application.find_by_key(rk.key)
+    app = await Application.find_by_key(rk)
     if app is None:
         raise HTTPException(401, "not allowed")
     name = body.custom_name or (body.related_task + datetime.now().strftime(" (%Y.%m.%d %H:%M:%S)"))

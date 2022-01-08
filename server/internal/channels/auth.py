@@ -1,37 +1,42 @@
-from typing import Awaitable, Callable, Optional
+import abc
+from typing import Type, Protocol, TYPE_CHECKING, TypeVar
 
+from beanie import PydanticObjectId, Document
 from fastapi import Depends, Query
-from starlette.websockets import WebSocket, WebSocketState
+from pydantic import validator
 
-from server.internal.auth.dependencies import parse_jwt_token
-
-NoTokenHandler = Callable[[WebSocket, Exception], Awaitable[None]]
-
-
-def get_ws_ticket_dependency_function(required: bool, no_token_handler: NoTokenHandler):
-    async def dependency_function(websocket: WebSocket, ticket: Optional[str] = Query(None)):
-        try:
-            assert ticket is not None, "ticket is not set"
-            token = parse_jwt_token(ticket)
-            assert token.token_type == "ws-ticket", "invalid token type: " + token.token_type
-            return token
-        except Exception as e:
-            if required:
-                await no_token_handler(websocket, e)
-            else:
-                return None
-
-    return dependency_function
+from server.internal.auth.token import TokenModel, JWT
+from server.models.auth import User
 
 
-async def _default_no_token_handler(ws: WebSocket, _exc: Exception):
-    if ws.application_state != WebSocketState.DISCONNECTED:
-        await ws.accept()
-        await ws.send_text(str(_exc))
-        await ws.close(1000)
+class ConcreteWSTicket(abc.ABC, TokenModel):
+    sub: PydanticObjectId
+
+    @validator("sub")
+    def _stringify_sub(cls, value):
+        return str(value)
 
 
-def WsTicket(required: bool = True, no_token_handler: Optional[NoTokenHandler] = None):  # noqa
-    return Depends(
-        get_ws_ticket_dependency_function(required, no_token_handler or _default_no_token_handler)
-    )
+_ws_ticket_cache = {}
+
+if TYPE_CHECKING:
+    WSTicketModel = ConcreteWSTicket
+else:
+    class WSTicketMeta(type):
+        def __getitem__(self, item: Type[Document]) -> Type[ConcreteWSTicket]:
+            if item not in _ws_ticket_cache:
+                _ws_ticket_cache[item] = type(f"WSTicket[{item.__name__}]", (ConcreteWSTicket,),
+                                              {"__token_type__": f"ws-ticket:{item.__name__}"})
+            return _ws_ticket_cache[item]
+
+    class WSTicketModel(metaclass=WSTicketMeta):
+        pass
+
+
+def WSTicket(model_class: Type[Document]):
+    jwt_type = JWT[WSTicketModel[model_class]]
+
+    def dependency(ticket: str = Query(...)):
+        return jwt_type(ticket).model
+
+    return Depends(dependency)

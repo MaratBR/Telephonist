@@ -3,23 +3,15 @@ import hashlib
 from datetime import datetime, timedelta
 from typing import *
 
-import nanoid
 from beanie import Document, Indexed, PydanticObjectId
 from beanie.operators import Eq
-from jose import JWTError
 from pydantic import BaseModel, EmailStr, Field, root_validator, validator
-from pymongo.errors import DuplicateKeyError
 from starlette.datastructures import Address
 from starlette.requests import Request
 
 from server.database import register_model
-from server.internal.auth.utils import (
-    create_resource_key,
-    decode_token_raw,
-    encode_token_raw,
-    hash_password,
-    verify_password,
-)
+from server.internal.auth.token import UserTokenModel
+from server.internal.auth.utils import create_static_key, hash_password, verify_password
 from server.settings import settings
 
 
@@ -44,18 +36,16 @@ class User(Document):
 
     def create_token(
         self,
-        token_type: str = "access",
-        lifetime: Optional[timedelta] = None,
+        lifetime: timedelta,
         check_string: Optional[str] = None,
     ):
         if check_string:
             check_string = hashlib.sha256(check_string.encode()).hexdigest()
         return UserTokenModel(
             sub=self.id,
-            token_type=token_type,
             is_superuser=self.is_superuser,
             username=self.username,
-            exp=datetime.utcnow() + (lifetime or timedelta(hours=4)),
+            exp=datetime.utcnow() + lifetime,
             check_string=check_string,
         )
 
@@ -178,7 +168,7 @@ class RefreshToken(Document):
 
     @classmethod
     async def create_token(cls, user: User, lifetime: timedelta) -> Tuple["RefreshToken", str]:
-        token = create_resource_key(40)
+        token = create_static_key(40)
         refresh_token = cls(
             user_id=user.id,
             expiration_date=datetime.utcnow() + lifetime,
@@ -206,7 +196,7 @@ class AuthLog(Document):
     user_agent: str
 
     class Collection:
-        name = "auth-login"
+        name = "auth_log"
 
     @classmethod
     async def log(

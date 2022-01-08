@@ -24,7 +24,6 @@ async def notify_event(event: Event):
             "event_key": event.event_key,
             "event_type": event.event_type,
             "source_ip": event.publisher_ip,
-            "user_id": event.user_id,
             "app_id": event.app_id,
             "data": event.data,
             "related_task": event.related_task,

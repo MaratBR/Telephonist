@@ -5,7 +5,6 @@ from pydantic import BaseSettings
 
 
 class Settings(BaseSettings):
-    jsonschema_validator: str = "jsonschema.Draft202012Validator"
     mongodb_db_name: str = "test"
     secret: str = "secret" * 5
     jwt_issuer: Optional[str] = "https://telephonist.io"
@@ -17,6 +16,7 @@ class Settings(BaseSettings):
     cors_origin: List[str] = [
         "http://localhost:1234",
         "http://telephonist.lc:1234",
+        "http://localhost.localdomain:1234",
     ]
     default_username: str = "admin"
     default_password: str = "admin"

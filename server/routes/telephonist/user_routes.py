@@ -1,3 +1,4 @@
+from datetime import timedelta, datetime
 from typing import Optional, Set, Union
 
 import pydantic
@@ -6,16 +7,27 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from server.internal.auth.dependencies import AccessToken
+from server.internal.auth.token import UserTokenModel, JWT
+from server.internal.channels import WSTicketModel, WSTicket
 from server.internal.channels.hub import Hub, bind_message, ws_controller
 from server.internal.telephonist.utils import CG
-from server.models.auth import UserTokenModel
+from server.models.auth import User
 
 user_router = APIRouter(tags=["user"], prefix="/user")
 
 
+@user_router.post("/issue-ws-ticket")
+async def issue_ws_ticket(token: UserTokenModel = AccessToken()):
+    exp = datetime.now() + timedelta(minutes=2)
+    return {
+        "exp": exp,
+        "ticket": WSTicketModel[User](exp=exp, sub=token.sub).encode()
+    }
+
+
 @ws_controller(user_router, "/ws")
 class UserHub(Hub):
-    token: UserTokenModel = AccessToken()
+    ticket: WSTicketModel[User] = WSTicket(User)
     EntryStr = pydantic.constr(regex=r"^[\w\d]+/[\w\d]+$")
     _entry: Optional[str] = None
     _events_group: Optional[str] = None

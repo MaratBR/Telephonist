@@ -3,8 +3,6 @@ import json
 import pytest
 from starlette.testclient import TestClient
 
-from server.internal.auth.schema import JWT_CHECK_HASH_COOKIE, JWT_REFRESH_COOKIE
-
 LOG_IN_REQUESTS = [
     ({"login": "DoesNotExist", "password": "whatever"}, 401),
     ({"login": "admin", "password": "admin"}, 200),

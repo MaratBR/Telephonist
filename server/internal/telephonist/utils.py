@@ -31,7 +31,7 @@ class ChannelGroups:
 
     @classmethod
     def _g(cls, *parts):
-        return "/" + "/".join(parts)
+        return "/" + "/".join(str(p) for p in parts)
 
     @classmethod
     def entry(cls, entry_type, entry_id):

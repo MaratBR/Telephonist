@@ -25,6 +25,7 @@ def create_app():
     app.include_router(auth_router)
     app.include_router(events_router)
     app.include_router(applications_router)
+    app.include_router(user_router)
 
     @app.get("/")
     def index(request: Request):

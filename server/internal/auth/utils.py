@@ -1,10 +1,7 @@
 import secrets
-from datetime import timedelta
+from functools import partial
 from typing import *
 
-import branca
-import msgpack
-from beanie import PydanticObjectId
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
@@ -16,8 +13,8 @@ __all__ = (
     "verify_password",
     "decode_token_raw",
     "encode_token_raw",
-    "create_resource_key",
-    "resource_key_factory",
+    "create_static_key",
+    "static_key_factory",
     "parse_resource_key",
 )
 
@@ -56,18 +53,11 @@ def encode_token_raw(data: dict):
     )
 
 
-def create_resource_key(length: int = 20, token_type: Optional[str] = None):
-    tok = secrets.token_urlsafe(length)
-    if token_type is not None:
-        tok = token_type + "." + tok
-    return tok
+create_static_key = secrets.token_urlsafe
 
 
-def resource_key_factory(length: int = 12, key_type: Optional[str] = None):
-    def _token_factory_function():
-        return create_resource_key(length, key_type)
-
-    return _token_factory_function
+def static_key_factory(length: int = 42):
+    return partial(create_static_key, length)
 
 
 def parse_resource_key(key: str) -> Tuple[str, str]:
