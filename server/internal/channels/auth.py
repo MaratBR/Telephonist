@@ -1,11 +1,11 @@
 import abc
-from typing import Type, Protocol, TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Protocol, Type, TypeVar
 
-from beanie import PydanticObjectId, Document
+from beanie import Document, PydanticObjectId
 from fastapi import Depends, Query
 from pydantic import validator
 
-from server.internal.auth.token import TokenModel, JWT
+from server.internal.auth.token import JWT, TokenModel
 from server.models.auth import User
 
 
@@ -22,11 +22,15 @@ _ws_ticket_cache = {}
 if TYPE_CHECKING:
     WSTicketModel = ConcreteWSTicket
 else:
+
     class WSTicketMeta(type):
         def __getitem__(self, item: Type[Document]) -> Type[ConcreteWSTicket]:
             if item not in _ws_ticket_cache:
-                _ws_ticket_cache[item] = type(f"WSTicket[{item.__name__}]", (ConcreteWSTicket,),
-                                              {"__token_type__": f"ws-ticket:{item.__name__}"})
+                _ws_ticket_cache[item] = type(
+                    f"WSTicket[{item.__name__}]",
+                    (ConcreteWSTicket,),
+                    {"__token_type__": f"ws-ticket:{item.__name__}"},
+                )
             return _ws_ticket_cache[item]
 
     class WSTicketModel(metaclass=WSTicketMeta):

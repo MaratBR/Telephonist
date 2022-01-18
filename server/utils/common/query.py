@@ -4,10 +4,10 @@ from fastapi import Depends, HTTPException
 from pydantic import BaseModel, ValidationError
 from starlette.requests import Request
 
-T = TypeVar("T", bound=Type[BaseModel])
+T = TypeVar("T", bound=BaseModel)
 
 
-def QueryDict(model: T) -> T:  # noqa
+def QueryDict(model: Type[T]) -> T:  # noqa
     def query_dict_dependency(request: Request):
         try:
             return model(**request.query_params)

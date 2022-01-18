@@ -29,6 +29,7 @@ class PaginationParameters(BaseModel):
 
 
 class PaginationResult(GenericModel, Generic[TPaginationItem]):
+    meta: Optional[Any]
     page: int
     page_size: int
     total: int
@@ -37,7 +38,6 @@ class PaginationResult(GenericModel, Generic[TPaginationItem]):
     order: OrderingDirection
     pages_returned: int
     result: List[TPaginationItem]
-    meta: Optional[Any]
 
 
 _order_by_types_cache = {}
@@ -57,11 +57,12 @@ def _create_order_by_enum(default_option: str, options: Set[str]):
 
 class Pagination:
     max_pages_per_request: int = 10
-    max_page_size: int = 100
+    max_page_size: int = 1000
     min_page_size: int = 10
     default_page_size: int = 50
     ordered_by_options: Set[str]
     default_order_by: str = "_id"
+    descending_by_default: bool = False
     use_order_by: bool = True
     allow_page_size: bool = True
     allow_pages_batch: bool = True
@@ -94,7 +95,11 @@ class Pagination:
                         __order_by_enum__,
                         __order_by_enum_default__,
                     ) = _create_order_by_enum(cls.default_order_by, cls.ordered_by_options)
-                    order: OrderingDirection = OrderingDirection.ASC
+                    order: OrderingDirection = (
+                        OrderingDirection.DESC
+                        if cls.descending_by_default
+                        else OrderingDirection.ASC
+                    )
                     order_by: __order_by_enum__ = __order_by_enum_default__
 
             cls.Parameters = Parameters
@@ -139,7 +144,9 @@ class Pagination:
                     else SortDirection.ASCENDING,
                 )
             )
-        q = q.skip((self.params.page - 1) * self.params.page_size).limit(
+        if self.params.page > 1:
+            q = q.skip((self.params.page - 1) * self.params.page_size)
+        q = q.limit(
             self.params.page_size * self.params.pages_returned
             if self.allow_pages_batch
             else self.params.page_size
@@ -152,6 +159,7 @@ class Pagination:
         elapsed = time.time_ns() - now
 
         return PaginationResult(
+            meta={"db:took": elapsed / 1000000},
             result=items,
             page=self.params.page,
             page_size=self.params.page_size,
@@ -160,5 +168,4 @@ class Pagination:
             order_by=self.params.order_by.value,
             order=self.params.order,
             pages_returned=math.ceil(len(items) / self.params.page_size),
-            meta={"db:took": elapsed / 1000000},
         )

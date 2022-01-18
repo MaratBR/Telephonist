@@ -1,7 +1,4 @@
-import hashlib
 import inspect
-import json
-import time
 from datetime import datetime, timedelta
 from functools import wraps
 from typing import *
@@ -10,7 +7,7 @@ from uuid import UUID, uuid4
 import fastapi
 from beanie import PydanticObjectId
 from beanie.exceptions import RevisionIdWasChanged
-from beanie.operators import Eq
+from beanie.operators import Eq, In
 from fastapi import Body, Depends, Header, HTTPException
 from loguru import logger
 from pydantic import BaseModel, Field, ValidationError
@@ -19,14 +16,14 @@ from starlette import status
 from server import VERSION
 from server.internal.auth.dependencies import AccessToken
 from server.internal.auth.schema import bearer, require_bearer
-from server.internal.channels import get_channel_layer, wscode, WSTicket, WSTicketModel
+from server.internal.channels import WSTicket, WSTicketModel, get_channel_layer, wscode
 from server.internal.channels.hub import (
     Hub,
     HubAuthenticationException,
     bind_message,
     ws_controller,
 )
-from server.internal.channels.wscode import WSC_INCONSISTENT_SIGNATURE
+from server.internal.telephonist import realtime
 from server.internal.telephonist.application import notify_new_application_settings
 from server.internal.telephonist.utils import CG, Errors
 from server.models.common import IdProjection, Pagination, PaginationResult
@@ -35,6 +32,8 @@ from server.models.telephonist import (
     ApplicationView,
     AppLog,
     ConnectionInfo,
+    EventSequence,
+    EventSequenceState,
     OneTimeSecurityCode,
     Server,
 )
@@ -46,7 +45,6 @@ from server.models.telephonist.application_settings import (
 from server.settings import settings
 
 _APPLICATION_NOT_FOUND = "Application not not found"
-_APPLICATION_HOSTED = "Application is hosted"
 router = fastapi.APIRouter(prefix="/applications", tags=["applications"])
 
 
@@ -62,7 +60,7 @@ class UpdateApplication(BaseModel):
     name: Optional[str]
     description: Optional[str] = Field(max_length=400)
     disabled: Optional[bool]
-    receive_offline: Optional[bool]
+    tags: Optional[List[str]]
 
 
 class UpdateApplicationSettings(BaseModel):
@@ -112,10 +110,7 @@ async def issue_ws_ticket(key: str = Depends(require_bearer)):
     if app is None:
         raise HTTPException(404, "application not found")
     exp = datetime.now() + timedelta(minutes=2)
-    return {
-        "ticket": WSTicketModel[Application](exp=exp, sub=app.id).encode(),
-        "exp": exp
-    }
+    return {"ticket": WSTicketModel[Application](exp=exp, sub=app.id).encode(), "exp": exp}
 
 
 @router.get("/{app_id}")
@@ -138,13 +133,9 @@ async def get_application(app_name: str):
 @router.patch("/{app_id}", dependencies=[AccessToken()])
 async def update_application(app_id: PydanticObjectId, body: UpdateApplication = Body(...)):
     app = Errors.raise404_if_none(await Application.get(app_id), _APPLICATION_NOT_FOUND)
-    if app.is_hosted:
-        raise HTTPException(status.HTTP_409_CONFLICT, _APPLICATION_HOSTED)
-    app.name = body.name or app.display_name
+    app.name = body.name or app.name
     app.description = body.description or app.description
-
-    if body.receive_offline is not None:
-        app.settings.receive_offline = body.receive_offline
+    app.tags = body.tags or app.tags
 
     await app.save_changes()
 
@@ -153,7 +144,7 @@ async def update_application(app_id: PydanticObjectId, body: UpdateApplication =
             await get_channel_layer().group_send(f"app{app.id}", "app_disabled", None)
         app.disabled = body.disabled
 
-    return app
+    return ApplicationView(**app.dict(by_alias=True))
 
 
 @router.post("/{app_id}/settings", dependencies=[AccessToken()])
@@ -256,25 +247,13 @@ class HelloMessage(BaseModel):
     subscriptions: Optional[List[str]]
     assumed_application_type: str
     supported_features: List[str]
-    software: str
-    software_version: Optional[str]
+    client_name: str
+    client_version: Optional[str]
     compatibility_key: str
+    machine_id: str
+    instance_id: str
     os: str
     pid: int
-
-    def fingerprint(self):
-        return (
-            "fv1-"
-            + hashlib.sha256(
-                json.dumps(
-                    [
-                        sorted(map(str.lower, self.supported_features)),
-                        self.compatibility_key,
-                        self.assumed_application_type,
-                    ]
-                ).encode()
-            ).hexdigest()
-        )
 
 
 class UpdateProcess(BaseModel):
@@ -307,15 +286,22 @@ def _if_ready_only(f):
 @ws_controller(router, "/ws")
 class AppReportHub(Hub):
     ticket: WSTicketModel[Application] = WSTicket(Application)
-    client_name: Optional[str] = Header(None, alias="user-agent")
     _app_id: PydanticObjectId
     _connection_info: Optional[ConnectionInfo] = None
     _connection_info_expire: datetime = datetime.min
     _settings_allowed: bool
+    _bound_sequences: Optional[List[PydanticObjectId]] = None
 
     def __init__(self):
         super(AppReportHub, self).__init__()
         self._ready = False
+
+    def _find_bound_sequences(self):
+        return EventSequence.find(
+            In("_id", self._bound_sequences),
+            EventSequence.app_id == self._app_id,
+            In("state", [EventSequenceState.PENDING, EventSequenceState.IN_PROGRESS]),
+        )
 
     async def authenticate(self):
         if self.ticket is None:
@@ -329,15 +315,24 @@ class AppReportHub(Hub):
     def _app(self):
         return Application.get(self.ticket.sub)
 
-    async def __create_connection(self, fingerprint: str, os: str):
+    async def __create_connection(
+        self,
+        *,
+        os: str,
+        machine_id: str,
+        instance_id: str,
+        client_name: str,
+        client_version: str,
+    ):
         self._connection_info = ConnectionInfo(
-            internal_id=self.connection.id,
             ip=self.websocket.client.host,
             app_id=self._app_id,
             is_connected=True,
-            client_name=self.client_name,
-            connection_state_fingerprint=fingerprint,
             os=os,
+            machine_id=machine_id,
+            instance_id=instance_id,
+            client_name=client_name,
+            client_version=client_version,
         )
         await self._connection_info.insert()
 
@@ -371,22 +366,24 @@ class AppReportHub(Hub):
         )
 
     async def on_disconnected(self, exc: Exception = None):
-        if self._connection_info:
-            await self._connection_info.replace()
-            self._connection_info.is_connected = False
-            self._connection_info.disconnected_at = datetime.utcnow()
-            self._connection_info.expires_at = datetime.utcnow() + timedelta(days=1)
-            await self._connection_info.save_changes()
+        if self._connection_info is None:
+            return
+        await self._connection_info.replace()
+        self._connection_info.is_connected = False
+        self._connection_info.disconnected_at = datetime.utcnow()
+        self._connection_info.expires_at = datetime.utcnow() + timedelta()
+        await self._connection_info.save_changes()
 
-    @bind_message("set_settings")
-    @_if_ready_only
-    async def set_settings(self, message: SetSettings):
-        app = await self._app()
-        app.settings = message.new_settings
-        app.settings_revision = message.settings_stamp
-        await notify_new_application_settings(
-            await self._app(), message.new_settings, stamp=message.settings_stamp
-        )
+        if not await ConnectionInfo.find(
+            ConnectionInfo.app_id == self._app_id, Eq("is_connected", True)
+        ).exists():
+            # put all sequences of this application in frozen state
+            ConnectionInfo.find()
+
+        if self._bound_sequences and len(self._bound_sequences):
+            update = {"frozen": True}
+            await self._find_bound_sequences().update(update)
+            await realtime.on_sequences_updated(self._app_id, update, self._bound_sequences)
 
     @bind_message("hello")
     async def on_hello(self, message: HelloMessage):
@@ -394,8 +391,6 @@ class AppReportHub(Hub):
             await self.send_error("you cannot introduce yourself twice, dummy!")
             return
         self._ready = True
-
-        connection_fingerprint = message.fingerprint()
 
         # region ensure that connection object exists
 
@@ -405,43 +400,39 @@ class AppReportHub(Hub):
             Eq(ConnectionInfo.is_connected, False),
         )
         if connection_info is not None:
-            if connection_info.is_connected:
-                # there's another connection
-                if connection_info.connection_state_fingerprint != connection_fingerprint:
-                    # TODO add more detail to this message
-                    await self.send_error(
-                        "It seems like there's already another open connection from"
-                        " this application and the fingerprint of that connection is"
-                        " different. Make sure that both connections have the same"
-                        " settings type or schema and features",
-                        "invalid_state_fingerprint",
-                    )
-                    await self.websocket.close(WSC_INCONSISTENT_SIGNATURE)
-                    return
-            else:
-                # reuse connection info
-                connection_info.client_name = message.software
-                connection_info.software_version = message.software_version
-                connection_info.internal_id = self.connection.id
-                connection_info.is_connected = True
-                connection_info.connected_at = datetime.utcnow()
-                connection_info.expires_at = None
-                connection_info.connection_state_fingerprint = connection_fingerprint
-                connection_info.os = message.os
-                try:
-                    await connection_info.replace()
-                    self._connection_info = connection_info
-                except RevisionIdWasChanged:
-                    logger.warning(
-                        "failed to update already existing connection due to the"
-                        " RevisionIdWasChanged error (id of connection in question - {}, related"
-                        " application - {})",
-                        connection_info.id,
-                        self._app_id,
-                    )
-                    await self.__create_connection(connection_fingerprint, message.os)
+            # reuse connection info
+            connection_info.client_name = message.client_name
+            connection_info.client_version = message.client_version
+            connection_info.is_connected = True
+            connection_info.connected_at = datetime.utcnow()
+            connection_info.expires_at = None
+            connection_info.os = message.os
+            try:
+                await connection_info.replace()
+                self._connection_info = connection_info
+            except RevisionIdWasChanged:
+                logger.warning(
+                    "failed to update already existing connection due to the"
+                    " RevisionIdWasChanged error (id of connection in question - {}, related"
+                    " application - {})",
+                    connection_info.id,
+                    self._app_id,
+                )
+                await self.__create_connection(
+                    os=message.os,
+                    instance_id=message.instance_id,
+                    machine_id=message.machine_id,
+                    client_name=message.client_name,
+                    client_version=message.client_version,
+                )
         else:
-            await self.__create_connection(connection_fingerprint, message.os)
+            await self.__create_connection(
+                os=message.os,
+                instance_id=message.instance_id,
+                machine_id=message.machine_id,
+                client_name=message.client_name,
+                client_version=message.client_version,
+            )
 
         await Server.report_server(self.websocket.client, None if message.os == "" else message.os)
         await self._send_connection()
@@ -455,11 +446,23 @@ class AppReportHub(Hub):
         await self.send_message(
             "greetings",
             {
-                "connection_fingerprint": connection_fingerprint,
                 "connections_total": await ConnectionInfo.find(
                     Eq(ConnectionInfo.is_connected, True), ConnectionInfo.app_id == self._app_id
                 ).count(),
             },
+        )
+
+        if message.subscriptions:
+            await self.set_subscriptions(message.subscriptions)
+
+    @bind_message("set_settings")
+    @_if_ready_only
+    async def set_settings(self, message: SetSettings):
+        app = await self._app()
+        app.settings = message.new_settings
+        app.settings_revision = message.settings_stamp
+        await notify_new_application_settings(
+            self._app_id, message.new_settings, stamp=message.settings_stamp
         )
 
     @bind_message("set_subscriptions")
@@ -488,3 +491,15 @@ class AppReportHub(Hub):
         )
         await self._fetch_connection()
         await self._send_connection()
+
+    @bind_message("bind_sequences")
+    @_if_ready_only
+    async def bind_sequences_to_current_connection(self, sequences: List[PydanticObjectId]):
+        self._bound_sequences = sequences
+        self._bound_sequences = [
+            m.id for m in await self._find_bound_sequences().project(IdProjection).to_list()
+        ]
+        update = {"frozen": False}
+        await self._find_bound_sequences().update(update)
+        await realtime.on_sequences_updated(self._app_id, update, self._bound_sequences)
+        await self.send_message("bound_to_sequences", self._bound_sequences)

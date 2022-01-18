@@ -1,5 +1,5 @@
 import enum
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 from uuid import UUID, uuid4
 
@@ -10,11 +10,18 @@ from server.database import register_model
 
 
 class EventSequenceState(str, enum.Enum):
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
     FAILED = "failed"
     SUCCEEDED = "succeeded"
     SKIPPED = "skipped"
+    IN_PROGRESS = "in_progress"
+
+    @property
+    def is_finished(self):
+        return self in [
+            EventSequenceState.FAILED,
+            EventSequenceState.SUCCEEDED,
+            EventSequenceState.SKIPPED,
+        ]
 
 
 @register_model
@@ -24,8 +31,10 @@ class EventSequence(Document):
     finished_at: Optional[datetime]
     description: Optional[str]
     meta: Optional[Dict[str, Any]]
-    state: EventSequenceState = EventSequenceState.PENDING
+    state: EventSequenceState = EventSequenceState.IN_PROGRESS
     related_task: str
+    expires_at: datetime = Field(default_factory=lambda: datetime.utcnow() + timedelta(days=3))
+    frozen: bool = False
 
     class Collection:
         name = "event_sequences"

@@ -33,7 +33,7 @@ class HubProxy(ABC):
 
     def send(self, msg_type: str, message: Any):
         if isinstance(message, BaseModel):
-            message = message.dict()
+            message = message.dict(by_alias=True)
         return self._send(msg_type, message)
 
 

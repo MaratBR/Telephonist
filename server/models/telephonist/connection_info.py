@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Dict, List, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pymongo
 from beanie import Document, Indexed, PydanticObjectId
@@ -22,18 +22,18 @@ class StatusEntry(BaseModel):
 
 @register_model
 class ConnectionInfo(Document):
-    internal_id: Indexed(str, unique=True)
     ip: str
-    connected_at: datetime = Field(default_factory=datetime.now)
+    connected_at: datetime = Field(default_factory=datetime.utcnow)
     disconnected_at: Optional[datetime]
     expires_at: Optional[datetime]
     client_name: Optional[str]
-    software_version: Optional[str]
+    client_version: Optional[str]
     app_id: PydanticObjectId
     os: str
+    instance_id: str
+    machine_id: str
     is_connected: bool = False
     event_subscriptions: List[str] = Field(default_factory=list)
-    connection_state_fingerprint: str
 
     @classmethod
     async def on_database_ready(cls):

@@ -66,6 +66,9 @@ class Application(Document):
     class Collection:
         name = "applications"
 
+    class Settings:
+        use_state_management = True
+
 
 class ApplicationView(BaseModel):
     id: PydanticObjectId = Field(alias="_id")
@@ -86,7 +89,7 @@ class SentEventTrace(Document):
     from_app: Optional[PydanticObjectId]
     to_app: PydanticObjectId
     event_type: str
-    last_event: datetime = Field(default_factory=datetime.now)
+    last_event: datetime = Field(default_factory=datetime.utcnow)
     times_used: int = 1
 
     class Collection:

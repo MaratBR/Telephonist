@@ -30,7 +30,7 @@ class TokenModel(BaseModel):
     __token_type__: ClassVar[str]
     registry: ClassVar[Dict[str, Type["TokenModel"]]] = {}
     exp: datetime
-    iat: datetime = Field(default_factory=datetime.now)
+    iat: datetime = Field(default_factory=datetime.utcnow)
     jti: str = Field(default_factory=nanoid.generate)
 
     def __init_subclass__(cls, **kwargs):
@@ -46,7 +46,7 @@ class TokenModel(BaseModel):
         return cls._decode_types(token_string, allowed_types=[cls])
 
     def encode(self):
-        data = self.dict()
+        data = self.dict(by_alias=True)
         data["__token_type"] = self.__class__.__token_type__
         return encode_token_raw(data)
 

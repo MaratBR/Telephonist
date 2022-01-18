@@ -128,7 +128,7 @@ class UserView(BaseModel):
 @register_model
 class BlockedAccessToken(Document):
     id: str
-    blocked_at: datetime = Field(default_factory=datetime.now)
+    blocked_at: datetime = Field(default_factory=datetime.utcnow)
 
     @classmethod
     async def block(cls, token_id: str):

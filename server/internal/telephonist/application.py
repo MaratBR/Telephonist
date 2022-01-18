@@ -1,6 +1,5 @@
-import time
 from typing import Any, Dict, Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from beanie import PydanticObjectId
 

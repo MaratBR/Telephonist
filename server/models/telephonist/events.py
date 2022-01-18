@@ -1,7 +1,9 @@
 import enum
+from datetime import datetime
 from typing import Any, Optional
 
 from beanie import Document, Indexed, PydanticObjectId
+from pydantic import Field
 
 from server.database import register_model
 
@@ -9,6 +11,7 @@ from server.database import register_model
 @register_model
 class Event(Document):
     app_id: PydanticObjectId
+    created_at: datetime = Field(default_factory=datetime.utcnow)
     event_key: str
     event_type: str
     related_task: Optional[str]

@@ -12,7 +12,7 @@ from server.database import register_model
 class Server(Document):
     name: Optional[str] = None
     ip: Indexed(str, unique=True) = None
-    last_seen: datetime = Field(default_factory=datetime.now)
+    last_seen: datetime = Field(default_factory=datetime.utcnow)
     os: Optional[str] = None
 
     class ServerView(BaseModel):

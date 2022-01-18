@@ -4,6 +4,7 @@ from typing import Any, List, Optional
 
 from beanie import Document, Indexed, PydanticObjectId
 from beanie.odm.queries.find import FindMany
+from pydantic import Field
 
 from server.database import register_model
 from server.settings import settings
@@ -24,9 +25,9 @@ class AppLog(Document):
     app_id: PydanticObjectId
     severity: Severity = Severity.UNKNOWN
     body: Any
-    meta: Optional[Any] = None
     related_task: Optional[str]
-    seq_id: Optional[PydanticObjectId]
+    sequence_id: Optional[PydanticObjectId]
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
     @staticmethod
     def __motor_create_collection_params__():

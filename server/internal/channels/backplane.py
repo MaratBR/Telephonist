@@ -4,6 +4,7 @@ import importlib
 import inspect
 import pickle
 import struct
+import time
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone, tzinfo
@@ -25,7 +26,7 @@ def _default_encoder(o: Any) -> Any:
         model_class = type(o)
         return {
             "__pydantic__": model_class.__module__ + ":" + model_class.__qualname__,
-            "_": o.dict(),
+            "_": o.dict(by_alias=True),
         }
     elif isinstance(o, datetime):
         if o.tzinfo:
@@ -69,11 +70,11 @@ def _ext_hook(code: int, data: Any):
     return msgpack.ExtType(code, data)
 
 
-def encode_broadcast_message(data: Any) -> bytes:
+def encode_object(data: Any) -> bytes:
     return msgpack.packb(data, default=_default_encoder)
 
 
-def decode_broadcast_message(string: bytes) -> Any:
+def decode_object(string: bytes) -> Any:
     return msgpack.unpackb(string, ext_hook=_ext_hook, object_hook=_object_hook)
 
 
@@ -127,8 +128,40 @@ class BackplaneBase(ABC):
     async def detach_queue(self, channel: str, queue: asyncio.Queue):
         ...
 
+    @abstractmethod
+    async def set(self, key: str, value: Any, ttl: Optional[timedelta] = None):
+        ...
 
-class Backplane(BackplaneBase):
+    @abstractmethod
+    async def get(self, key: str) -> Any:
+        ...
+
+
+class RedisBackplane(BackplaneBase):
+    async def set(self, key: str, value: Any, ttl: Optional[timedelta] = None):
+        await self._redis.set(
+            key,
+            encode_object(
+                {
+                    "value": value,
+                    "created_at": time.time(),
+                    "ttl": None if ttl is None else ttl.total_seconds(),
+                }
+            ),
+        )
+
+    async def get(self, key: str) -> Any:
+        value = await self._redis.get(key)
+        if value is None:
+            return None
+        try:
+            value = decode_object(value)
+            if value["ttl"] and value["created_at"] + value["ttl"] < time.time():
+                value = None
+        except:
+            return None
+        return value
+
     def __init__(self, redis_url: str):
         self._redis = aioredis.from_url(redis_url)
         self._listeners: Dict[str, List[asyncio.Queue]] = {}
@@ -145,7 +178,7 @@ class Backplane(BackplaneBase):
         pass
 
     async def publish_many(self, channels: List[str], data: Any):
-        encoded = encode_broadcast_message(data)
+        encoded = encode_object(data)
         tasks = [self._redis.publish(c, encoded) for c in channels]
         await asyncio.gather(*tasks)
 
@@ -155,7 +188,7 @@ class Backplane(BackplaneBase):
                 if message is None or message["type"] != "message":
                     continue
                 try:
-                    data = decode_broadcast_message(message["data"])
+                    data = decode_object(message["data"])
                 except Exception as exc:
                     logger.exception(exc)
                     continue  # TODO
@@ -200,13 +233,13 @@ class Backplane(BackplaneBase):
         await self._pubsub.unsubscribe(channel)
 
 
-_backplane: Optional[Backplane] = None
+_backplane: Optional[RedisBackplane] = None
 
 
 async def start_backplane(redis_url: str):
     global _backplane
     assert _backplane is None, "You can't initialize backplane twice"
-    _backplane = Backplane(redis_url)
+    _backplane = RedisBackplane(redis_url)
     await _backplane.start()
 
 
@@ -217,7 +250,7 @@ async def stop_backplane():
 
 
 def get_default_backplane():
-    assert _backplane is not None, "Backplane is not yet initialized"
+    assert _backplane is not None, "RedisBackplane is not yet initialized"
     return _backplane
 
 

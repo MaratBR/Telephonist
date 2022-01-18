@@ -75,7 +75,7 @@ async def login_user(credentials: HybridLoginData, request: Request):
                 refresh_cookie_path=request.scope["router"].url_path_for("refresh"),
                 refresh_as_cookie=credentials.hybrid,
                 check_string=check_string,
-                token_exp=datetime.now() + ttl
+                token_exp=datetime.now() + ttl,
             )
             await AuthLog.log(
                 "hybrid-login", user.id, request.headers.get("user-agent"), request.client.host
@@ -127,7 +127,7 @@ async def refresh(
         refresh_token if settings.rotate_refresh_token else None,
         refresh_cookie_path=request.scope["router"].url_path_for("refresh"),
         refresh_as_cookie=refresh_as_cookie,
-        token_exp=datetime.now() + ttl
+        token_exp=datetime.now() + ttl,
     )
 
 

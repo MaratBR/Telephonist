@@ -166,11 +166,9 @@ class Hub:
 
         try:
             assert isinstance(json_obj, dict), "Received message must be a JSON object"
-            assert (
-                "msg_type" in json_obj and "data" in json_obj
-            ), 'Message object does not contain "data" and "msg_type" keys'
+            assert "msg_type" in json_obj, 'Message object does not contain "msg_type" key'
             assert isinstance(json_obj["msg_type"], str), 'Raw message\'s "type" is not a string'
-            message = {"msg_type": json_obj["msg_type"], "data": json_obj["data"]}
+            message = {"msg_type": json_obj["msg_type"], "data": json_obj.get("data")}
             logger.debug(
                 f"recv from {self.websocket.client.host}:{self.websocket.client.port} < {message}"
             )
@@ -180,10 +178,9 @@ class Hub:
 
     async def send_message(self, msg_type: str, data: Any):
         message = HubMessage(msg_type=msg_type, data=data)
-        await self.websocket.send_text(message.json())
-        logger.debug(
-            f"sent to {self.websocket.client.host}:{self.websocket.client.port} > {message.json()}"
-        )
+        raw = message.json(by_alias=True)
+        await self.websocket.send_text(raw)
+        logger.debug(f"sent to {self.websocket.client.host}:{self.websocket.client.port} > {raw}")
 
     async def send_error(self, error: Any, kind: Optional[str] = None):
         """
@@ -237,7 +234,9 @@ class Hub:
                 try:
                     await self.on_connected()
                     await self._main_loop()
-                except WebSocketDisconnect as exc:
+                except Exception as exc:
+                    if not isinstance(exc, WebSocketDisconnect):
+                        await self.on_exception(exc)
                     await self.on_disconnected(exc)
         finally:
             if layer_events_listener:

@@ -1,18 +1,25 @@
+import time
 from datetime import datetime
 from typing import *
 
 import fastapi
 from beanie import PydanticObjectId
-from beanie.operators import In
 from fastapi import Body, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from starlette.background import BackgroundTasks
 from starlette.requests import Request
+from starlette.responses import JSONResponse
 
-import server.internal.telephonist.events as events_internal
 from server.internal.auth.dependencies import AccessToken
 from server.internal.auth.schema import bearer, require_bearer
+from server.internal.telephonist import realtime
 from server.models.common import Identifier, Pagination
-from server.models.telephonist import Application, Event, EventSequence
+from server.models.telephonist import (
+    Application,
+    Event,
+    EventSequence,
+    EventSequenceState,
+)
 from server.utils.common import QueryDict
 
 router = fastapi.APIRouter(tags=["events"], prefix="/events")
@@ -20,24 +27,36 @@ router = fastapi.APIRouter(tags=["events"], prefix="/events")
 
 class EventsFilter(BaseModel):
     event_type: Optional[str]
-    receiver: Optional[PydanticObjectId]
+    related_task: Optional[str]
+    event_key: Optional[str]
+    app_id: Optional[PydanticObjectId]
+    limit: Optional[int] = Field(gt=1, lt=5000)
+    before: Optional[datetime]
 
 
 class EventsPagination(Pagination):
-    ordered_by_options = {"event_type", "_id"}
+    default_order_by = "created_at"
+    descending_by_default = True
+    ordered_by_options = {"event_type", "related_task", "created_at", "_id"}
 
 
-@router.get("/", dependencies=[AccessToken()])
+@router.get("")
 async def get_events(
     pagination: EventsPagination = Depends(),
     filter_data=QueryDict(EventsFilter),
 ):
     find = []
 
-    if filter_data.event_type:
-        find.append(Event.event_type == filter_data.event_type)
-    if filter_data.receiver:
-        find.append(In(Event.receivers, filter_data.receiver))
+    if filter_data.app_id:
+        find.append(Event.app_id == filter_data.app_id)
+    if filter_data.event_key:
+        find.append(Event.event_key == filter_data.event_key)
+    else:
+        if filter_data.event_type:
+            find.append(Event.event_type == filter_data.event_type)
+        if filter_data.related_task:
+            find.append(Event.related_task == filter_data.related_task)
+
     return await pagination.paginate(Event, filter_condition=find)
 
 
@@ -49,7 +68,7 @@ class PublishEventRequest(BaseModel):
 
 async def publish_event(event: Event):
     await event.insert()
-    await events_internal.notify_event(event)
+    await realtime.notify_event(event)
 
 
 @router.post("/publish", description="Publish event")
@@ -58,6 +77,8 @@ async def publish_event_endpoint(
     body: PublishEventRequest = Body(...),
     rk: str = Depends(require_bearer),
 ):
+    if realtime.is_reserved_event(body.name):
+        raise HTTPException(422, f"event type '{body.name}' is reserved for internal use")
     app = await Application.find_by_key(rk)
     if app is None:
         raise HTTPException(401, "application with given key does not exist")
@@ -69,6 +90,16 @@ async def publish_event_endpoint(
                 "the sequence you try to publish to does not exist or does not belong to the"
                 " current application",
             )
+        if seq.state.is_finished:
+            raise HTTPException(409, "the sequence you try to publish to is marked as finished")
+
+        update = {}
+        if seq.frozen:
+            update["frozen"] = False
+        if len(update) != 0:
+            await seq.update(update)
+            await realtime.on_sequences_updated(seq.app_id, update, [seq.id])
+
         event_key = f"{body.name}@{seq.related_task}"
         related_task = seq.related_task
     else:
@@ -97,7 +128,8 @@ class CreateSequence(BaseModel):
 
 @router.post("/sequence")
 async def create_sequence(
-    body: Optional[CreateSequence] = Body(None),
+    request: Request,
+    body: CreateSequence = Body(None),
     rk: str = Depends(require_bearer),
 ):
     app = await Application.find_by_key(rk)
@@ -112,4 +144,67 @@ async def create_sequence(
         related_task=body.related_task,
     )
     await sequence.save()
+    await publish_event(
+        Event(
+            sequence_id=sequence.id,
+            related_task=body.related_task,
+            event_type=realtime.START_EVENT,
+            event_key=f"{realtime.START_EVENT}@{body.related_task}",
+            publisher_ip=request.client.host,
+            app_id=app.id,
+        )
+    )
     return {"_id": sequence.id}
+
+
+class FinishSequence(BaseModel):
+    error_message: Optional[str]
+    is_skipped: bool = False
+
+
+@router.post("/sequence/{seq_id}/finish")
+async def finish_sequence(
+    seq_id: PydanticObjectId, body: FinishSequence = Body(...), rk: str = Depends(require_bearer)
+):
+    app = await Application.find_by_key(rk)
+    if app is None:
+        raise HTTPException(401, "not allowed")
+    seq = await EventSequence.get(seq_id)
+    if seq is None:
+        raise HTTPException(404, f"sequence with id {seq_id} not found")
+    if seq.app_id != app.id:
+        raise HTTPException(
+            401, f"sequence {seq_id} does not belong to the application {app.name} ({app.id})"
+        )
+    if seq.state.is_finished:
+        raise HTTPException(409, f"sequence {seq_id} is already finished")
+    if body.is_skipped:
+        seq.state = EventSequenceState.SKIPPED
+    elif body.error_message:
+        seq.state = EventSequenceState.FAILED
+    else:
+        seq.state = EventSequenceState.SUCCEEDED
+    seq.meta = {}
+    await seq.replace()
+    return {"detail": f"Sequence {seq_id} is now finished"}
+
+
+@router.put("/sequence/{seq_id}/meta")
+async def update_sequence_meta(
+    seq_id: PydanticObjectId,
+    tasks: BackgroundTasks,
+    new_meta: Dict[str, Any] = Body(...),
+    rk: str = Depends(require_bearer),
+):
+    app = await Application.find_by_key(rk)
+    if app is None:
+        raise HTTPException(401, "this application does not exist")
+    seq = await EventSequence.get(seq_id)
+    if seq is None:
+        raise HTTPException(404, "sequence not found")
+    if seq.app_id != app.id:
+        raise HTTPException(401, "this sequence does not belong to this application")
+    # TODO disallow updating meta when sequence is finished?
+    await seq.update({"meta": new_meta})
+    tasks.add_task(realtime.on_sequence_meta_updated, seq, new_meta)
+    return {"detail": "Metadata has been updated"}
