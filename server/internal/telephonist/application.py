@@ -7,11 +7,11 @@ from server.internal.channels import get_channel_layer
 from server.internal.telephonist.utils import CG
 
 
-async def notify_new_application_settings(
+async def on_new_application_settings(
     app_id: PydanticObjectId, new_settings: Dict[str, Any], *, stamp: Optional[UUID] = None
 ):
     await get_channel_layer().groups_send(
         [CG.app(app_id), CG.entry("application", app_id)],
         "settings_update",
-        {"settings_revision": stamp, "settings": new_settings},
+        {"settings": new_settings},
     )

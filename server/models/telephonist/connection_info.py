@@ -4,7 +4,6 @@ from uuid import UUID, uuid4
 
 import pymongo
 from beanie import Document, Indexed, PydanticObjectId
-from loguru import logger
 from pydantic import BaseModel, Field
 
 from server.database import register_model

@@ -1,11 +1,11 @@
 import asyncio
+import logging
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import *
 
 import nanoid
-from loguru import logger
 from pydantic import BaseModel
 
 from server.internal.channels.backplane import (
@@ -16,6 +16,8 @@ from server.internal.channels.backplane import (
 )
 
 _PREFIX = "CL."
+
+_logger = logging.getLogger("telephonist.channels")
 
 
 class HubError(Exception):
@@ -87,11 +89,10 @@ class Connection(HubProxy):
         while True:
             channel, message = await self._queue.get()
             if not channel.startswith(_PREFIX):
-                logger.warning(
-                    'received a message from channel "{channel}" that doesn\'t start with a prefix'
-                    " {prefix}",
-                    channel=channel,
-                    prefix=_PREFIX,
+                _logger.warning(
+                    'received a message from channel "%s" that doesn\'t start with a prefix %s',
+                    channel,
+                    _PREFIX,
                 )
                 continue
             channel = channel[len(_PREFIX) :]
@@ -137,7 +138,6 @@ class ChannelLayer:
             pass
 
     async def _handle_internal_message(self, message: dict):
-        logger.debug("received a message {}", message)
         data = message["data"]
         msg_type = message["msg_type"]
         if msg_type == "disconnect_connection":
@@ -192,16 +192,6 @@ class ChannelLayer:
         if len(parts) == 1:
             return self._id, parts[0]
         return parts
-
-    def publish_layer_event(self, event_name: str, data: Any):
-        return self._backplane.publish(_PREFIX + "__event:" + event_name, data)
-
-    def subscribe_to_layer_events(self, event: str, *events: str):
-        prefix = _PREFIX + "__event:"
-        return mapped_subscription(
-            self._backplane.subscribe(prefix + event, *(prefix + e for e in events)),
-            lambda pair: (pair[0][len(prefix) :], pair[1]),
-        )
 
 
 _channel_layer: Optional[ChannelLayer] = None

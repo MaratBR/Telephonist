@@ -14,9 +14,9 @@ class Settings(BaseSettings):
     db_url: str = "mongodb://localhost:27017"
     is_testing: bool = False
     cors_origin: List[str] = [
-        "http://localhost:1234",
-        "http://telephonist.lc:1234",
-        "http://localhost.localdomain:1234",
+        "http://localhost:8080",
+        "http://telephonist.lc:8080",
+        "http://localhost.localdomain:8080",
     ]
     default_username: str = "admin"
     default_password: str = "admin"

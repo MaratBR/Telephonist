@@ -35,7 +35,8 @@ class EventSequence(Document):
     related_task: str
     expires_at: datetime = Field(default_factory=lambda: datetime.utcnow() + timedelta(days=3))
     frozen: bool = False
+    error: Optional[str] = None
 
     class Collection:
         name = "event_sequences"
-        indexes = ["name", "related_task"]
+        indexes = ["name", "related_task", "app_id", "frozen", "state"]

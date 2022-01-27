@@ -1,12 +1,11 @@
 import abc
-from typing import TYPE_CHECKING, Protocol, Type, TypeVar
+from typing import TYPE_CHECKING, Type, TypeVar
 
 from beanie import Document, PydanticObjectId
 from fastapi import Depends, Query
 from pydantic import validator
 
 from server.internal.auth.token import JWT, TokenModel
-from server.models.auth import User
 
 
 class ConcreteWSTicket(abc.ABC, TokenModel):
@@ -37,7 +36,10 @@ else:
         pass
 
 
-def WSTicket(model_class: Type[Document]):
+TDoc = TypeVar("TDoc", bound=Document)
+
+
+def WSTicket(model_class: Type[TDoc]) -> WSTicketModel[TDoc]:
     jwt_type = JWT[WSTicketModel[model_class]]
 
     def dependency(ticket: str = Query(...)):

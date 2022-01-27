@@ -1,8 +1,6 @@
 import asyncio
-import base64
 import importlib
-import inspect
-import pickle
+import logging
 import struct
 import time
 from abc import ABC, abstractmethod
@@ -15,10 +13,10 @@ from uuid import UUID
 import aioredis
 import msgpack
 from beanie import PydanticObjectId
-from loguru import logger
 from pydantic import BaseModel
 
 _MAX32INT = 4294967295
+_logger = logging.getLogger("telephonist.channels")
 
 
 def _default_encoder(o: Any) -> Any:
@@ -190,15 +188,15 @@ class RedisBackplane(BackplaneBase):
                 try:
                     data = decode_object(message["data"])
                 except Exception as exc:
-                    logger.exception(exc)
+                    _logger.exception(str(exc))
                     continue  # TODO
 
                 await self._dispatch_message(message["channel"].decode(), data)
         except asyncio.CancelledError:
             pass
         except Exception as exc:
-            logger.exception(exc)
-        logger.debug("Receiver loop has completed execution")
+            _logger.exception(str(exc))
+        _logger.debug("Receiver loop has completed execution")
 
     async def attach_queue(self, channel: str, queue: asyncio.Queue) -> Unsubscribe:
         listeners = self._listeners.get(channel)

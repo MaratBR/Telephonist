@@ -9,10 +9,15 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTasks
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+from starlette.websockets import WebSocket
 
 from server.internal.auth.dependencies import AccessToken
 from server.internal.auth.schema import bearer, require_bearer
+from server.internal.channels import WSTicket, WSTicketModel, get_channel_layer
+from server.internal.channels.hub import ws_controller
 from server.internal.telephonist import realtime
+from server.internal.telephonist.utils import CG
+from server.models.auth import User
 from server.models.common import Identifier, Pagination
 from server.models.telephonist import (
     Application,
@@ -129,7 +134,7 @@ class CreateSequence(BaseModel):
 @router.post("/sequence")
 async def create_sequence(
     request: Request,
-    body: CreateSequence = Body(None),
+    body: CreateSequence = Body(...),
     rk: str = Depends(require_bearer),
 ):
     app = await Application.find_by_key(rk)
@@ -154,6 +159,7 @@ async def create_sequence(
             app_id=app.id,
         )
     )
+    await realtime.on_sequence_updated(sequence)
     return {"_id": sequence.id}
 
 
@@ -186,13 +192,13 @@ async def finish_sequence(
         seq.state = EventSequenceState.SUCCEEDED
     seq.meta = {}
     await seq.replace()
+    await realtime.on_sequence_updated(seq)
     return {"detail": f"Sequence {seq_id} is now finished"}
 
 
 @router.put("/sequence/{seq_id}/meta")
 async def update_sequence_meta(
     seq_id: PydanticObjectId,
-    tasks: BackgroundTasks,
     new_meta: Dict[str, Any] = Body(...),
     rk: str = Depends(require_bearer),
 ):
@@ -206,5 +212,13 @@ async def update_sequence_meta(
         raise HTTPException(401, "this sequence does not belong to this application")
     # TODO disallow updating meta when sequence is finished?
     await seq.update({"meta": new_meta})
-    tasks.add_task(realtime.on_sequence_meta_updated, seq, new_meta)
+    await realtime.on_sequence_meta_updated(seq, new_meta)
     return {"detail": "Metadata has been updated"}
+
+
+@router.get("/{event_id}", dependencies=[AccessToken()])
+async def get_event(event_id: PydanticObjectId):
+    event = await Event.get(event_id)
+    if event is None:
+        raise HTTPException(404, "event not found")
+    return event

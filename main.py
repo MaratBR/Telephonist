@@ -4,7 +4,11 @@ import uvicorn
 
 if __name__ == "__main__":
     args = {}
-    if os.path.isfile("certs/cert.crt") and os.path.isfile("certs/key.pem"):
+    if (
+        os.path.isfile("certs/cert.crt")
+        and os.path.isfile("certs/key.pem")
+        and not os.environ.get("DISABLE_SSL_IN_DEBUG")
+    ):
         args.update(
             ssl_keyfile="certs/key.pem", ssl_certfile="certs/cert.crt", ssl_keyfile_password="1234"
         )

@@ -1,10 +1,11 @@
 import asyncio
 import inspect
+import logging
 from collections import namedtuple
+from json import JSONDecodeError
 from typing import *
 
 from fastapi import APIRouter
-from loguru import logger
 from pydantic import BaseModel, ValidationError, parse_obj_as
 from pydantic.typing import is_classvar
 from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
@@ -17,6 +18,7 @@ WS_CBV_MESSAGE_HANDLER = "__ws_cbv_message__"
 WS_CBV_INTERNAL_EVENTS = "__ws_cbv_internal_events__"
 HubHandlerMeta = namedtuple("HubHandlerMeta", ("msg_type", "typehint"))
 HubHandlerCache = namedtuple("HubHandlerCache", ("method_name", "typehint"))
+_logger = logging.getLogger("telephonist.channels")
 
 
 class HubException(Exception):
@@ -140,11 +142,7 @@ class Hub:
             assert isinstance(events, set)
             for event in events:
                 if event in event_handlers:
-                    logger.warning(
-                        'overriding event "{event}" in {classname}',
-                        event=event,
-                        classname=cls.__name__,
-                    )
+                    _logger.warning('overriding event "%s" in %s', event, cls.__name__)
                 event_handlers[event] = method_name
         cls._static_internal_event_listeners = event_handlers
 
@@ -153,25 +151,23 @@ class Hub:
         Метод, вызываемый при возникновении неожиданного исключения.
         :param exception:
         """
-        await self.send_error(exception, kind="internal")
-        logger.exception(exception)
+        # await self.send_error(exception, kind="internal")
+        _logger.exception(str(exception))
 
     async def read_message(self) -> dict:
         try:
             json_obj = await self.websocket.receive_json()
-        except (AssertionError, WebSocketDisconnect) as exc:
-            if isinstance(exc, AssertionError):
-                raise WebSocketDisconnect()
-            raise
+        except AssertionError:
+            # TODO ????
+            raise WebSocketDisconnect()
+        except JSONDecodeError:
+            raise InvalidMessageException("invalid message format")
 
         try:
             assert isinstance(json_obj, dict), "Received message must be a JSON object"
             assert "msg_type" in json_obj, 'Message object does not contain "msg_type" key'
             assert isinstance(json_obj["msg_type"], str), 'Raw message\'s "type" is not a string'
             message = {"msg_type": json_obj["msg_type"], "data": json_obj.get("data")}
-            logger.debug(
-                f"recv from {self.websocket.client.host}:{self.websocket.client.port} < {message}"
-            )
             return message
         except AssertionError as exc:
             raise InvalidMessageException(str(exc))
@@ -180,7 +176,6 @@ class Hub:
         message = HubMessage(msg_type=msg_type, data=data)
         raw = message.json(by_alias=True)
         await self.websocket.send_text(raw)
-        logger.debug(f"sent to {self.websocket.client.host}:{self.websocket.client.port} > {raw}")
 
     async def send_error(self, error: Any, kind: Optional[str] = None):
         """
@@ -254,11 +249,11 @@ class Hub:
                     try:
                         await _call_method(method, data)
                     except Exception as exc:
-                        logger.exception(exc)
+                        _logger.exception(str(exc))
         except asyncio.CancelledError:
             pass
         except Exception as exc:
-            logger.exception(exc)
+            _logger.exception(str(exc))
 
     async def _main_loop(self):
         task = asyncio.create_task(self._external_messages_loop())
@@ -285,7 +280,7 @@ class Hub:
             try:
                 message = await self.read_message()
             except InvalidMessageException as err:
-                await self.send_error(err)
+                # await self.send_error(err)
                 continue
             await self._dispatch_message(message)
 

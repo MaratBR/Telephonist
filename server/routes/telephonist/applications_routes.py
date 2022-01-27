@@ -8,15 +8,14 @@ import fastapi
 from beanie import PydanticObjectId
 from beanie.exceptions import RevisionIdWasChanged
 from beanie.operators import Eq, In
-from fastapi import Body, Depends, Header, HTTPException
-from loguru import logger
+from fastapi import Body, Depends, HTTPException
 from pydantic import BaseModel, Field, ValidationError
 from starlette import status
 
 from server import VERSION
 from server.internal.auth.dependencies import AccessToken
-from server.internal.auth.schema import bearer, require_bearer
-from server.internal.channels import WSTicket, WSTicketModel, get_channel_layer, wscode
+from server.internal.auth.schema import require_bearer
+from server.internal.channels import WSTicket, WSTicketModel, get_channel_layer
 from server.internal.channels.hub import (
     Hub,
     HubAuthenticationException,
@@ -24,7 +23,7 @@ from server.internal.channels.hub import (
     ws_controller,
 )
 from server.internal.telephonist import realtime
-from server.internal.telephonist.application import notify_new_application_settings
+from server.internal.telephonist.application import on_new_application_settings
 from server.internal.telephonist.utils import CG, Errors
 from server.models.common import IdProjection, Pagination, PaginationResult
 from server.models.telephonist import (
@@ -42,6 +41,7 @@ from server.models.telephonist.application_settings import (
     get_application_settings_model,
     get_default_settings_for_type,
 )
+from server.routes._common import api_logger
 from server.settings import settings
 
 _APPLICATION_NOT_FOUND = "Application not not found"
@@ -368,17 +368,11 @@ class AppReportHub(Hub):
     async def on_disconnected(self, exc: Exception = None):
         if self._connection_info is None:
             return
-        await self._connection_info.replace()
         self._connection_info.is_connected = False
         self._connection_info.disconnected_at = datetime.utcnow()
         self._connection_info.expires_at = datetime.utcnow() + timedelta()
         await self._connection_info.save_changes()
-
-        if not await ConnectionInfo.find(
-            ConnectionInfo.app_id == self._app_id, Eq("is_connected", True)
-        ).exists():
-            # put all sequences of this application in frozen state
-            ConnectionInfo.find()
+        await realtime.on_connection_info_changed(self._connection_info)
 
         if self._bound_sequences and len(self._bound_sequences):
             update = {"frozen": True}
@@ -411,7 +405,7 @@ class AppReportHub(Hub):
                 await connection_info.replace()
                 self._connection_info = connection_info
             except RevisionIdWasChanged:
-                logger.warning(
+                api_logger.warning(
                     "failed to update already existing connection due to the"
                     " RevisionIdWasChanged error (id of connection in question - {}, related"
                     " application - {})",
@@ -436,6 +430,7 @@ class AppReportHub(Hub):
 
         await Server.report_server(self.websocket.client, None if message.os == "" else message.os)
         await self._send_connection()
+        await realtime.on_connection_info_changed(self._connection_info)
 
         # endregion
 
@@ -461,7 +456,7 @@ class AppReportHub(Hub):
         app = await self._app()
         app.settings = message.new_settings
         app.settings_revision = message.settings_stamp
-        await notify_new_application_settings(
+        await on_new_application_settings(
             self._app_id, message.new_settings, stamp=message.settings_stamp
         )
 

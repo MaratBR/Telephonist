@@ -35,7 +35,7 @@ class TokenResponse(JSONResponse):
         super(TokenResponse, self).__init__(
             {
                 "access_token": token,
-                "exp": str(token_exp),
+                "exp": token_exp.isoformat() if token_exp else None,
                 "refresh_token": None if refresh_as_cookie else refresh_token,
                 "token_type": "bearer",
                 "password_reset_required": password_reset_token is not None,

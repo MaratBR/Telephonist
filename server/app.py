@@ -1,18 +1,18 @@
+import logging
+
 from fastapi import FastAPI
-from loguru import logger
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 
 from server.database import init_database, shutdown_database
 from server.internal.channels import get_channel_layer, start_backplane, stop_backplane
-from server.logging import create_logger
 from server.routes import *
 from server.settings import settings
 
 
 def create_app():
     app = FastAPI()
-    app.logger = create_logger()
+    logger = logging.getLogger("telephonist.application")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin,
@@ -20,7 +20,6 @@ def create_app():
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
     app.include_router(users_router)
     app.include_router(auth_router)
     app.include_router(events_router)
@@ -43,7 +42,7 @@ def create_app():
             await start_backplane(settings.redis_url)
             await get_channel_layer().start()
         except Exception as exc:
-            logger.exception(exc)
+            logger.exception(str(exc))
 
     @app.on_event("shutdown")
     async def _on_shutdown():
@@ -52,7 +51,7 @@ def create_app():
             await shutdown_database()
             await get_channel_layer().dispose()
         except Exception as exc:
-            logger.exception(exc)
+            logger.exception(str(exc))
             raise
 
     return app

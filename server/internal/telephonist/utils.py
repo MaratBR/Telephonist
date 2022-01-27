@@ -49,5 +49,9 @@ class ChannelGroups:
     def app(cls, app_id: Union[str, PydanticObjectId]):
         return cls._g("apps", app_id)
 
+    @classmethod
+    def sequence_events(cls, sequence_id: PydanticObjectId):
+        return cls._g("sequence_events", sequence_id)
+
 
 CG = ChannelGroups

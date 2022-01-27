@@ -53,10 +53,9 @@ async def login_user(credentials: HybridLoginData, request: Request):
     user = await User.find_user_by_credentials(credentials.login, credentials.password)
     if user is not None:
         if user.password_reset_required:
-            password_token = PasswordResetToken(
-                sub=user.id, exp=datetime.now() + timedelta(minutes=30)
-            ).encode()
-            response = TokenResponse(None, None, password_reset_token=password_token)
+            exp = datetime.now() + timedelta(minutes=10)
+            password_token = PasswordResetToken(sub=user.id, exp=exp).encode()
+            response = TokenResponse(None, None, password_reset_token=password_token, token_exp=exp)
             await AuthLog.log(
                 "password-reset-login",
                 user.id,

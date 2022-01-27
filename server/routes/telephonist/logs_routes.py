@@ -20,6 +20,7 @@ class LogBody(BaseModel):
     body: Any
     sequence_id: Optional[PydanticObjectId]
     severity: Severity = Severity.UNKNOWN
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class GetLogs(BaseModel):
@@ -41,6 +42,11 @@ async def get_logs(app_id: PydanticObjectId, params=QueryDict(GetLogs)):
         .to_list()
     )
     return logs
+
+
+@logs_router.get("/{app_id}/export")
+async def export_logs(app_id: PydanticObjectId):
+    return "NO"
 
 
 @logs_router.post("/add")
@@ -69,11 +75,7 @@ async def create_log_entry(
     return {"detail": "Log accepted"}
 
 
-class LogMessage(BaseModel):
-    severity: Severity = Severity.UNKNOWN
-    body: Any
-    date: datetime = Field(default_factory=datetime.utcnow)
-    sequence_id: Optional[PydanticObjectId] = None
+LogMessage = LogBody
 
 
 @ws_controller(logs_router, "/ws")

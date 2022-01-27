@@ -11,8 +11,7 @@ from server.settings import settings
 
 
 class Severity(enum.IntEnum):
-    UNKNOWN = -1
-    NONE = 0
+    UNKNOWN = 0
     DEBUG = 10
     INFO = 20
     WARNING = 30

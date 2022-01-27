@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
-from typing import Optional, Set, Union
+from typing import List, Set
 
-import pydantic
 from beanie import PydanticObjectId
+from beanie.operators import In
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -13,6 +13,8 @@ from server.internal.channels import WSTicket, WSTicketModel
 from server.internal.channels.hub import Hub, bind_message, ws_controller
 from server.internal.telephonist.utils import CG
 from server.models.auth import User
+from server.models.common import Identifier, IdProjection
+from server.models.telephonist import Application
 
 user_router = APIRouter(tags=["user"], prefix="/user")
 
@@ -23,61 +25,60 @@ async def issue_ws_ticket(token: UserTokenModel = AccessToken()):
     return {"exp": exp, "ticket": WSTicketModel[User](exp=exp, sub=token.sub).encode()}
 
 
-@ws_controller(user_router, "/ws")
-class UserHub(Hub):
-    class SubscribeToEvents(BaseModel):
-        event_type: Optional[str]
-        related_task: Optional[str]
-        app_id: Optional[PydanticObjectId]
-
+class AuthorizedHub(Hub):
     ticket: WSTicketModel[User] = WSTicket(User)
-    EntryStr = pydantic.constr(regex=r"^[\w\d]+/[\w\d]+$")
+
+
+@ws_controller(user_router, "/ws")
+class UserHub(AuthorizedHub):
     _entries: Set[str] = set()
-    _events_group: Optional[str] = None
-    _subscription_desc: Optional[SubscribeToEvents] = None
+    _application_events: Set[str] = None
 
     async def on_connected(self):
         await self.connection.add_to_group(CG.entry("user", self.ticket.sub))
         await self.send_message("introduction", {"server_version": VERSION, "authentication": "ok"})
 
-    @bind_message("unsubscribe_events")
-    async def unsubscribe_events(self):
-        if self._events_group:
-            await self.connection.remove_from_group(self._events_group)
-            self._events_group = None
+    @bind_message("unsub_from_app_events")
+    async def unsubscribe_from_application_events(self, app_ids: List[PydanticObjectId]):
+        applications = await Application.find(In("_id", app_ids)).project(IdProjection).to_list()
+        self._application_events -= applications
         await self._sync()
 
-    @bind_message("subscribe_events")
-    async def subscribe_to_events(self, message: SubscribeToEvents):
-        if message.app_id:
-            group = CG.application_events(message.app_id)
-        else:
-            if message.related_task is None and message.event_type is None:
-                return
-            group = CG.events(message.related_task, message.event_type)
-        if self._events_group:
-            await self.connection.remove_from_group(self._events_group)
-        self._events_group = group
-        self._subscription_desc = message
-        await self.connection.add_to_group(self._events_group)
+    @bind_message("sub_to_app_events")
+    async def subscribe_from_application_events(self, app_ids: List[PydanticObjectId]):
+        applications = await Application.find(In("_id", app_ids)).project(IdProjection).to_list()
+        self._application_events += applications
         await self._sync()
+
+    class EntryDescriptor(BaseModel):
+        entry_type: Identifier
+        id: PydanticObjectId
+
+        def __str__(self):
+            return self.entry_type + "/" + str(self.id)
 
     @bind_message("subscribe_entry")
-    async def subscribe_to_changes(self, entry: EntryStr):
-        entry = entry.lower()
-        if entry not in self._entries:
-            self._entries.add(entry)
-            await self.connection.add_to_group(CG.entry(*entry.split("/")))
+    async def subscribe_to_changes(self, entry: EntryDescriptor):
+        if str(entry) not in self._entries:
+            self._entries.add(str(entry))
+            await self.connection.add_to_group(CG.entry(entry.entry_type, entry.id))
         await self._sync()
 
     @bind_message("unsubscribe_entry")
-    async def unsubscribe_from_changes(self, entry: EntryStr):
+    async def unsubscribe_from_changes(self, entry: EntryDescriptor):
         if entry in self._entries:
-            self._entries.remove(entry)
-            await self.connection.remove_from_group(CG.entry(*self._entry.split("/")))
+            self._entries.remove(str(entry))
+            await self.connection.remove_from_group(CG.entry(entry.entry_type, entry.id))
         await self._sync()
 
     async def _sync(self):
         await self.send_message(
-            "sync", {"entries": list(self._entries), "events_subscription": self._subscription_desc}
+            "sync",
+            {
+                "entries": [
+                    self.EntryDescriptor(entry_type=et, id=i)
+                    for et, i in map(lambda v: v.split("/"), self._entries)
+                ],
+                "application_events": list(self._application_events),
+            },
         )
