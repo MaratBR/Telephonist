@@ -10,13 +10,13 @@ from pydantic import BaseModel, Field
 
 from server.database import register_model
 from server.internal.auth.utils import static_key_factory
-from server.models.common import IdProjection
+from server.models.common import IdProjection, SoftDeletes
 
 
 @register_model
-class Application(Document):
+class Application(SoftDeletes):
     ARBITRARY_TYPE: ClassVar[str] = "arbitrary"
-    HOST_TYPE: ClassVar[str] = "host"
+    AGENT_TYPE: ClassVar[str] = "agent"
 
     name: Indexed(str, unique=True)
     description: Optional[str] = None

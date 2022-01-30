@@ -61,12 +61,12 @@ async def create_log_entry(
             raise HTTPException(
                 401, f"this application ({app.id}) has no access to sequence {seq.id}"
             )
-        related_task = seq.related_task
+        task_name = seq.task_name
     else:
-        related_task = None
+        task_name = None
     log = AppLog(
         sequence_id=body.sequence_id,
-        related_task=related_task,
+        task_name=task_name,
         body=body.body,
         severity=body.severity,
         app_id=app.id,
@@ -88,17 +88,17 @@ class LogsHub(Hub):
 
     @bind_message("log")
     async def log(self, message: LogMessage):
-        related_task = self._cache.get(f"{message.sequence_id}_related_task")
-        if related_task is None:
+        task_name = self._cache.get(f"{message.sequence_id}_task_name")
+        if task_name is None:
             seq = await EventSequence.get(message.sequence_id)
             if seq is None or seq.app_id != self.ticket.sub:
                 return
-            related_task = seq.related_task
-            self._cache[f"{message.sequence_id}_related_task"] = related_task
+            task_name = seq.task_name
+            self._cache[f"{message.sequence_id}_task_name"] = task_name
 
         log = AppLog(
             sequence_id=message.sequence_id,
-            related_task=related_task,
+            task_name=task_name,
             body=message.body,
             app_id=message,
         )

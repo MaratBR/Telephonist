@@ -3,9 +3,9 @@ import hashlib
 from datetime import datetime, timedelta
 from typing import *
 
-from beanie import Document, Indexed, PydanticObjectId
+from beanie import Document, PydanticObjectId
 from beanie.operators import Eq
-from pydantic import BaseModel, EmailStr, Field, root_validator, validator
+from pydantic import BaseModel, EmailStr, Field, root_validator
 from starlette.datastructures import Address
 from starlette.requests import Request
 

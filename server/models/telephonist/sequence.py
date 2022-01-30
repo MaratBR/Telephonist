@@ -1,7 +1,6 @@
 import enum
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
-from uuid import UUID, uuid4
 
 from beanie import Document, PydanticObjectId
 from pydantic import Field
@@ -32,11 +31,15 @@ class EventSequence(Document):
     description: Optional[str]
     meta: Optional[Dict[str, Any]]
     state: EventSequenceState = EventSequenceState.IN_PROGRESS
-    related_task: str
+    task_name: Optional[str]
+    task_id: Optional[PydanticObjectId]
     expires_at: datetime = Field(default_factory=lambda: datetime.utcnow() + timedelta(days=3))
     frozen: bool = False
     error: Optional[str] = None
 
     class Collection:
         name = "event_sequences"
-        indexes = ["name", "related_task", "app_id", "frozen", "state"]
+        indexes = ["name", "task_name", "app_id", "frozen", "state"]
+
+    class Settings:
+        use_state_management = True

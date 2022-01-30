@@ -2,14 +2,14 @@ import inspect
 from datetime import datetime, timedelta
 from functools import wraps
 from typing import *
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import fastapi
 from beanie import PydanticObjectId
 from beanie.exceptions import RevisionIdWasChanged
 from beanie.operators import Eq, In
-from fastapi import Body, Depends, HTTPException
-from pydantic import BaseModel, Field, ValidationError
+from fastapi import Body, Depends, HTTPException, Query
+from pydantic import BaseModel, Field, ValidationError, parse_obj_as
 from starlette import status
 
 from server import VERSION
@@ -23,11 +23,11 @@ from server.internal.channels.hub import (
     ws_controller,
 )
 from server.internal.telephonist import realtime
-from server.internal.telephonist.application import on_new_application_settings
 from server.internal.telephonist.utils import CG, Errors
 from server.models.common import IdProjection, Pagination, PaginationResult
 from server.models.telephonist import (
     Application,
+    ApplicationTask,
     ApplicationView,
     AppLog,
     ConnectionInfo,
@@ -41,11 +41,12 @@ from server.models.telephonist.application_settings import (
     get_application_settings_model,
     get_default_settings_for_type,
 )
+from server.models.telephonist.application_task import TaskTrigger, TaskTypesRegistry
 from server.routes._common import api_logger
 from server.settings import settings
 
 _APPLICATION_NOT_FOUND = "Application not not found"
-router = fastapi.APIRouter(prefix="/applications", tags=["applications"])
+router = fastapi.APIRouter(prefix="/applications")
 
 
 class CreateApplication(BaseModel):
@@ -83,7 +84,7 @@ async def get_applications(
 @router.post("", status_code=201, responses={201: {"model": IdProjection}})
 async def create_application(_=AccessToken(), body: CreateApplication = Body(...)):
     if (
-        body.application_type not in (Application.ARBITRARY_TYPE, Application.HOST_TYPE)
+        body.application_type not in (Application.ARBITRARY_TYPE, Application.AGENT_TYPE)
         and not settings.allow_custom_application_types
     ):
         raise HTTPException(422, "invalid application type, custom application types are disabled")
@@ -102,6 +103,14 @@ async def create_application(_=AccessToken(), body: CreateApplication = Body(...
     )
     await app.save()
     return IdProjection(_id=app.id)
+
+
+@router.get("/self")
+async def get_self_application(rk: str = Depends(require_bearer)):
+    app = await Application.find_by_key(rk).project(ApplicationView)
+    if app is None:
+        raise HTTPException(404, "application not found")
+    return app
 
 
 @router.post("/issue-ws-ticket")
@@ -154,7 +163,7 @@ async def update_application_settings(app_id: PydanticObjectId, body: UpdateAppl
         raise HTTPException(404, "Application not found")
     model = get_application_settings_model(app.application_type)
     try:
-        app.settings = model(body)
+        app.settings = model(**body.new_settings)
     except ValidationError:
         # TODO detailed response
         raise HTTPException(
@@ -238,9 +247,125 @@ async def finish_code_registration(code: str, body: CRFinishRequest):
     return {"access_key": app.access_key, "id": app.id}
 
 
-class SettingsDescriptor(BaseModel):
-    settings: Optional[Any]
-    settings_revision: Optional[int]
+@router.get("/{app_id}/defined-tasks")
+async def get_application_tasks(app_id: PydanticObjectId, include_deleted: bool = Query(False)):
+    app = await Application.get(app_id)
+    if app is None:
+        raise HTTPException(404, "application not found")
+    tasks = (
+        await (ApplicationTask if include_deleted else ApplicationTask.not_deleted())
+        .find(ApplicationTask.app_id == app_id)
+        .to_list()
+    )
+    return tasks
+
+
+class DefineTask(BaseModel):
+    name: str
+    description: Optional[str]
+    type: Optional[TaskTypesRegistry.KeyType]
+    body: Optional[Any]
+    env: Dict[str, str] = Field(default_factory=dict)
+
+
+def parse_body_type_or_raise(body_type: Optional[TaskTypesRegistry.KeyType], body: Optional[Any]):
+    body_type = body_type or TaskTypesRegistry
+    type_ = ApplicationTask.get_body_type(body_type)
+    if type_ is None:
+        if body is not None:
+            raise HTTPException(
+                422,
+                f'invalid task body, body must be empty (null), since type "{body_type}" doesn\'t'
+                " allow a body",
+            )
+        return body_type, None
+    else:
+        try:
+            return body_type, parse_obj_as(type_, body)
+        except ValidationError:
+            raise HTTPException(422, f"invalid task body, body must be assignable to type {type_}")
+
+
+async def raise_if_application_task_name_taken(app_id: PydanticObjectId, name: str):
+    if await ApplicationTask.find(
+        ApplicationTask.app_id == app_id, ApplicationTask.name == name
+    ).exists():
+        raise HTTPException(409, f'task with name "{name}" for application {app_id} already exists')
+
+
+@router.post("/{app_id}/defined-tasks", dependencies=[AccessToken()])
+async def define_new_application_task__user(app_id: PydanticObjectId, body: DefineTask = Body(...)):
+    if not await Application.find(Application.id == app_id).exists():
+        raise HTTPException(404, "application does not exists")
+    task_type, task_body = parse_body_type_or_raise(body.type, body.body)
+    await raise_if_application_task_name_taken(app_id, body.name)
+    task = ApplicationTask(
+        app_id=app_id,
+        name=body.name,
+        description=body.name,
+        body=task_body,
+        type=body.type,
+        task_type=task_type,
+        env=body.env,
+    )
+    await task.insert()
+    await realtime.on_application_task_updated(task)
+    return {"_id": str(task.id)}
+
+
+@router.delete("/{app_id}/defined-tasks/{task_id}")
+async def deactivate_task(app_id: PydanticObjectId, task_id: PydanticObjectId):
+    task = await ApplicationTask.find_one(
+        ApplicationTask.app_id == app_id,
+        ApplicationTask.id == task_id,
+        Eq(ApplicationTask.deleted_at, None),
+    )
+    if task is not None:
+        await task.soft_delete()
+        return {"detail": "task removed"}
+    raise HTTPException(404, "task with given id and given app_id does not exist")
+
+
+class UpdateTask(BaseModel):
+    class Missing:
+        ...
+
+    description: Optional[str]
+    tags: Optional[List[str]]
+    type: Optional[TaskTypesRegistry.KeyType]
+    body: Optional[Any] = Missing
+    name: Optional[str]
+    env: Optional[Dict[str, str]]
+    triggers: Optional[List[TaskTrigger]]
+
+
+@router.patch("/{app_id}/defined-tasks/{task_id}")
+async def update_task(
+    app_id: PydanticObjectId, task_id: PydanticObjectId, upd: UpdateTask = Body(...)
+):
+    task = await ApplicationTask.find_one(
+        ApplicationTask.app_id == app_id,
+        ApplicationTask.id == task_id,
+        Eq(ApplicationTask.deleted_at, None),
+    )
+    if task is None:
+        raise HTTPException(404, "Application tasks not found")
+    if upd.body is not UpdateTask.Missing or upd.type is not None:
+        if upd.body is not UpdateTask.Missing:
+            task.body = upd.body
+        if upd.type:
+            task.task_type = upd.type
+        task.task_type, task.body = parse_body_type_or_raise(task.task_type, upd.type)
+    if upd.name is not None:
+        await raise_if_application_task_name_taken(app_id, upd.name)
+        task.name = upd.name
+    task.env = task.env if upd.env is None else upd.env
+    task.triggers = task.triggers if upd.triggers is None else upd.triggers
+    task.description = task.description if upd.description is None else upd.description
+    task.tags = task.tags if upd.tags is None else upd.tags
+    await task.save_changes()
+    await realtime.on_application_task_updated(task)
+    return task
 
 
 class HelloMessage(BaseModel):
@@ -254,20 +379,6 @@ class HelloMessage(BaseModel):
     instance_id: str
     os: str
     pid: int
-
-
-class UpdateProcess(BaseModel):
-    uid: UUID
-    title: Optional[str]
-    subtitle: Optional[str]
-    progress: Optional[str]
-    is_intermediate: Optional[bool]
-    tasks_total: Optional[int]
-
-
-class SetSettings(BaseModel):
-    new_settings: Dict[str, Any]
-    settings_stamp: UUID
 
 
 def _if_ready_only(f):
@@ -286,6 +397,7 @@ def _if_ready_only(f):
 @ws_controller(router, "/ws")
 class AppReportHub(Hub):
     ticket: WSTicketModel[Application] = WSTicket(Application)
+    same_ip: Optional[str] = Query(None)
     _app_id: PydanticObjectId
     _connection_info: Optional[ConnectionInfo] = None
     _connection_info_expire: datetime = datetime.min
@@ -300,7 +412,7 @@ class AppReportHub(Hub):
         return EventSequence.find(
             In("_id", self._bound_sequences),
             EventSequence.app_id == self._app_id,
-            In("state", [EventSequenceState.PENDING, EventSequenceState.IN_PROGRESS]),
+            EventSequence.state == EventSequenceState.IN_PROGRESS,
         )
 
     async def authenticate(self):
@@ -449,16 +561,6 @@ class AppReportHub(Hub):
 
         if message.subscriptions:
             await self.set_subscriptions(message.subscriptions)
-
-    @bind_message("set_settings")
-    @_if_ready_only
-    async def set_settings(self, message: SetSettings):
-        app = await self._app()
-        app.settings = message.new_settings
-        app.settings_revision = message.settings_stamp
-        await on_new_application_settings(
-            self._app_id, message.new_settings, stamp=message.settings_stamp
-        )
 
     @bind_message("set_subscriptions")
     @_if_ready_only

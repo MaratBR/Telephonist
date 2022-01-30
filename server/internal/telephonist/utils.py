@@ -1,11 +1,10 @@
-from typing import Any, Optional, TypeVar, Union
+from typing import Optional, Type, TypeVar, Union
 
 from beanie import Document, PydanticObjectId
 from fastapi import HTTPException
 from starlette import status
 
-from server.internal.channels import get_channel_layer
-from server.models.common import Identifier
+from server.models.common import SoftDeletes
 
 T = TypeVar("T")
 
@@ -53,5 +52,17 @@ class ChannelGroups:
     def sequence_events(cls, sequence_id: PydanticObjectId):
         return cls._g("sequence_events", sequence_id)
 
+    @classmethod
+    def user(cls, user_id: PydanticObjectId):
+        return cls._g("users", user_id)
+
 
 CG = ChannelGroups
+
+
+async def require_model_with_id(model: Type[Document], document_id, *, message: str = "Not found"):
+    if issubclass(model, SoftDeletes):
+        q = model.not_deleted()
+    else:
+        q = model
+    Errors.raise404_if_false(await q.find({"_id": document_id}).exists(), message=message)

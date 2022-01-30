@@ -1,5 +1,5 @@
 import abc
-from typing import TYPE_CHECKING, Type, TypeVar
+from typing import TYPE_CHECKING, Optional, Type, TypeVar
 
 from beanie import Document, PydanticObjectId
 from fastapi import Depends, Query
@@ -10,6 +10,7 @@ from server.internal.auth.token import JWT, TokenModel
 
 class ConcreteWSTicket(abc.ABC, TokenModel):
     sub: PydanticObjectId
+    connection_name: Optional[str]
 
     @validator("sub")
     def _stringify_sub(cls, value):

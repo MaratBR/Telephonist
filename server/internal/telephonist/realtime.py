@@ -1,6 +1,6 @@
 from typing import *
 
-from beanie import Document, PydanticObjectId
+from beanie import PydanticObjectId
 from pydantic import BaseModel
 
 from server.internal.channels import get_channel_layer
@@ -8,31 +8,35 @@ from server.internal.telephonist.utils import CG
 from server.models.auth import User
 from server.models.telephonist import (
     Application,
+    ApplicationTask,
     ConnectionInfo,
     Event,
     EventSequence,
-    EventSequenceState,
 )
 
 EventSourceType = Union[User, Application]
 
 START_EVENT = "start"
 STOP_EVENT = "stop"
+CANCELLED_EVENT = "cancelled"
+FAILED_EVENT = "failed"
+SUCCEEDED_EVENT = "succeeded"
 
 
 def is_reserved_event(event_type: str):
     return event_type in (START_EVENT, STOP_EVENT)
 
 
-async def notify_event(event: Event):
-    await get_channel_layer().groups_send(
-        [
-            CG.application_events(event.app_id),
-            CG.events(event_type=event.event_type, task_name=event.related_task or "_"),
-        ],
-        "new_event",
-        event,
-    )
+async def notify_events(*events: Event):
+    for event in events:
+        await get_channel_layer().groups_send(
+            [
+                CG.application_events(event.app_id),
+                CG.events(event_type=event.event_type, task_name=event.task_name or "_"),
+            ],
+            "new_event",
+            event,
+        )
 
 
 class EntryUpdate(BaseModel):
@@ -79,4 +83,26 @@ async def on_connection_info_changed(connection_info: ConnectionInfo):
             CG.entry("connection_info", connection_info),
         ],
         EntryUpdate(id=connection_info.id, entry_type="connection_info", entry=connection_info),
+    )
+
+
+async def on_application_task_updated(task: ApplicationTask):
+    await publish_entry_update(
+        [CG.entry("application", task.app_id), CG.app(task.app_id)],
+        EntryUpdate(id=task.id, entry_type="application_task", entry=task),
+    )
+
+
+async def on_application_task_deleted(task_id: PydanticObjectId, app_id: PydanticObjectId):
+    await publish_entry_update(
+        [CG.entry("application", app_id), CG.app(app_id)],
+        EntryUpdate(id=task_id, entry_type="application_task", entry=None),
+    )
+
+
+async def on_application_disabled(app_id: PydanticObjectId, disabled: bool):
+    await get_channel_layer().group_send(CG.app(app_id), "app_disabled", {"disabled": disabled})
+    await publish_entry_update(
+        [CG.entry("application", app_id)],
+        EntryUpdate(id=app_id, entry_type="application", entry={"disabled"}),
     )

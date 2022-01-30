@@ -5,7 +5,6 @@ from fastapi import Depends, Header
 from fastapi.security import HTTPBasic, HTTPBearer
 from fastapi.security.utils import get_authorization_scheme_param
 from pydantic import BaseModel
-from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from server.internal.auth.exceptions import InvalidToken

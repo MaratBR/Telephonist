@@ -24,9 +24,9 @@ def get_default_settings_for_type(application_type: str):
 
 
 def get_application_settings_model(application_type: str) -> Type[BaseModel]:
-    if application_type == Application.HOST_TYPE:
+    if application_type == Application.AGENT_TYPE:
         return HostSettings
 
 
 def application_type_allows_empty_settings(application_type: str):
-    return application_type not in (Application.HOST_TYPE,)
+    return application_type not in (Application.AGENT_TYPE,)

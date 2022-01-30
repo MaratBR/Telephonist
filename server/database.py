@@ -1,4 +1,5 @@
 import inspect
+import warnings
 from typing import Optional, TypeVar
 
 import motor.motor_asyncio
@@ -25,10 +26,12 @@ def register_model(model: TModelType) -> TModelType:
     return model
 
 
-async def init_database():
+async def init_database(client: Optional[motor.motor_asyncio.AsyncIOMotorClient] = None):
     global _client
-    _client = motor.motor_asyncio.AsyncIOMotorClient(settings.db_url)
-    db = _client.telephonist
+    if client:
+        warnings.warn("Motor client has been explicitly set in init_database function")
+    _client = client or motor.motor_asyncio.AsyncIOMotorClient(settings.db_url)
+    db = _client[settings.mongodb_db_name]
     for model in _models:
         if hasattr(model, "__motor_create_collection_params__"):
             params = getattr(model, "__motor_create_collection_params__")()
@@ -41,6 +44,8 @@ async def init_database():
                     await db.create_collection(name, **params)
                 except CollectionInvalid:
                     pass
+                except Exception as exc:
+                    raise exc
     await init_beanie(database=db, document_models=list(_models))
 
     for model in _models:

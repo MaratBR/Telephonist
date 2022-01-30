@@ -1,5 +1,3 @@
-import re
-
 from beanie import PydanticObjectId
 from pydantic import BaseModel, Field, constr
 

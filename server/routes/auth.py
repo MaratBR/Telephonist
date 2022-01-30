@@ -20,10 +20,10 @@ from server.internal.auth.token import JWT, PasswordResetToken, UserTokenModel
 from server.models.auth import AuthLog, RefreshToken, User, UserView
 from server.settings import settings
 
-auth_router = fastapi.routing.APIRouter(tags=["auth"], prefix="/auth")
+auth_api_router = fastapi.routing.APIRouter(tags=["auth"], prefix="/auth")
 
 
-@auth_router.get("/user", response_model=UserView)
+@auth_api_router.get("/user", response_model=UserView)
 async def get_user(user: User = CurrentUser(required=True)):
     return user
 
@@ -33,7 +33,7 @@ class NewUserInfo(BaseModel):
     password: str
 
 
-@auth_router.post("/register")
+@auth_api_router.post("/register")
 async def register_new_user(info: NewUserInfo, host: Optional[str] = Header(None)):
     if settings.user_registration_unix_socket_only and host != settings.unix_socket_name:
         raise HTTPException(403, "User registration is only allowed through unix socket")
@@ -48,7 +48,7 @@ class NewPassword(BaseModel):
     password: str
 
 
-@auth_router.post("/token")
+@auth_api_router.post("/token")
 async def login_user(credentials: HybridLoginData, request: Request):
     user = await User.find_user_by_credentials(credentials.login, credentials.password)
     if user is not None:
@@ -87,7 +87,7 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
-@auth_router.post("/refresh")
+@auth_api_router.post("/refresh")
 async def refresh(
     request: Request,
     body: Optional[RefreshRequest] = Body(None),
@@ -122,7 +122,7 @@ async def refresh(
     )
     ttl = timedelta(hours=12)
     return TokenResponse(
-        user.create_token(ttl),
+        user.create_token(ttl).encode(),
         refresh_token if settings.rotate_refresh_token else None,
         refresh_cookie_path=request.scope["router"].url_path_for("refresh"),
         refresh_as_cookie=refresh_as_cookie,
@@ -130,7 +130,7 @@ async def refresh(
     )
 
 
-@auth_router.post("/logout")
+@auth_api_router.post("/logout")
 async def logout(request: Request, refresh_token: str = Cookie(..., alias=JWT_REFRESH_COOKIE)):
     if refresh_token:
         token = await RefreshToken.find_valid(refresh_token)
@@ -145,7 +145,7 @@ class RevokeRefreshToken(BaseModel):
     token: str
 
 
-@auth_router.post("/revoke-token")
+@auth_api_router.post("/revoke-token")
 async def revoke_refresh_token(
     request: Request,
     body: RevokeRefreshToken,
@@ -165,7 +165,7 @@ class ResetPassword(BaseModel):
     new_password: str
 
 
-@auth_router.post("/reset-password")
+@auth_api_router.post("/reset-password")
 async def reset_password(body: ResetPassword, request: Request):
     user = await User.get(body.password_reset_token.model.sub)
     if not user.password_reset_required:

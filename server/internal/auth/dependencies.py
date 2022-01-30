@@ -1,11 +1,8 @@
 import hashlib
-from functools import partial, wraps
 from typing import *
 
 from fastapi import Cookie, Depends, params
-from pydantic import BaseModel, ValidationError
 
-from server.internal.auth.utils import parse_resource_key
 from server.models.auth import BlockedAccessToken, User
 
 from .exceptions import AuthError, InvalidToken, UserNotFound
@@ -44,7 +41,7 @@ def _get_user_token(
 
 def AccessToken(  # noqa N802
     required: bool = True,
-):
+) -> Union[params.Depends, UserTokenModel]:
     return Depends(_require_user_token if required else _get_user_token)
 
 

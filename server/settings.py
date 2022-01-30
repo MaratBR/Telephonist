@@ -1,5 +1,5 @@
 from datetime import timedelta
-from typing import Generic, List, Optional, TypeVar
+from typing import List, Optional
 
 from pydantic import BaseSettings
 

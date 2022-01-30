@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import List, Set
+from typing import List
 
 from beanie import PydanticObjectId
 from beanie.operators import In
@@ -8,34 +8,31 @@ from pydantic import BaseModel
 
 from server import VERSION
 from server.internal.auth.dependencies import AccessToken
-from server.internal.auth.token import UserTokenModel
-from server.internal.channels import WSTicket, WSTicketModel
-from server.internal.channels.hub import Hub, bind_message, ws_controller
-from server.internal.telephonist.utils import CG
+from server.internal.channels import WSTicketModel, WSTicket
+from server.internal.channels.hub import ws_controller, Hub, bind_message
+from server.internal.telephonist import CG
 from server.models.auth import User
-from server.models.common import Identifier, IdProjection
+from server.models.common import IdProjection, Identifier
 from server.models.telephonist import Application
 
-user_router = APIRouter(tags=["user"], prefix="/user")
+ws_router = APIRouter(prefix="/ws")
 
 
-@user_router.post("/issue-ws-ticket")
-async def issue_ws_ticket(token: UserTokenModel = AccessToken()):
-    exp = datetime.now() + timedelta(minutes=2)
-    return {"exp": exp, "ticket": WSTicketModel[User](exp=exp, sub=token.sub).encode()}
+@ws_router.get("/issue-ws-ticket")
+async def issue_ws_ticket(token=AccessToken()):
+    exp = datetime.utcnow() + timedelta(minutes=5)
+    return {
+        "ticket": WSTicketModel[User](exp=exp, sub=token.sub).encode(),
+        "exp": exp
+    }
 
 
-class AuthorizedHub(Hub):
+@ws_controller(ws_router, "")
+class UserHub(Hub):
     ticket: WSTicketModel[User] = WSTicket(User)
 
-
-@ws_controller(user_router, "/ws")
-class UserHub(AuthorizedHub):
-    _entries: Set[str] = set()
-    _application_events: Set[str] = None
-
     async def on_connected(self):
-        await self.connection.add_to_group(CG.entry("user", self.ticket.sub))
+        await self.connection.add_to_group(CG.user(self.ticket.sub))
         await self.send_message("introduction", {"server_version": VERSION, "authentication": "ok"})
 
     @bind_message("unsub_from_app_events")

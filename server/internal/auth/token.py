@@ -1,6 +1,5 @@
 import abc
-from datetime import datetime, timedelta
-from functools import partial
+from datetime import datetime
 from typing import (
     TYPE_CHECKING,
     ClassVar,
@@ -8,19 +7,16 @@ from typing import (
     Generic,
     List,
     Optional,
-    Protocol,
     Type,
     TypeVar,
     Union,
-    get_args,
 )
 
 import nanoid
 from beanie import PydanticObjectId
-from pydantic import BaseModel, Field, Json, ValidationError, root_validator, validator
-from pydantic.generics import GenericModel
+from pydantic import BaseModel, Field, ValidationError, validator
 
-from server.internal.auth.exceptions import AuthError, InvalidToken
+from server.internal.auth.exceptions import InvalidToken
 from server.internal.auth.utils import decode_token_raw, encode_token_raw
 
 T = TypeVar("T", bound="TokenModel")

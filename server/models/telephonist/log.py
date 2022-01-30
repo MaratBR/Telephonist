@@ -1,8 +1,8 @@
 import enum
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, Optional
 
-from beanie import Document, Indexed, PydanticObjectId
+from beanie import Document, PydanticObjectId
 from beanie.odm.queries.find import FindMany
 from pydantic import Field
 
@@ -24,7 +24,7 @@ class AppLog(Document):
     app_id: PydanticObjectId
     severity: Severity = Severity.UNKNOWN
     body: Any
-    related_task: Optional[str]
+    task_name: Optional[str]
     sequence_id: Optional[PydanticObjectId]
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

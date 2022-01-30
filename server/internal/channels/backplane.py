@@ -3,15 +3,17 @@ import importlib
 import logging
 import struct
 import time
+import warnings
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone, tzinfo
+from datetime import datetime, timedelta, timezone
 from functools import partial
 from typing import *
 from uuid import UUID
 
 import aioredis
 import msgpack
+from aioredis import Redis
 from beanie import PydanticObjectId
 from pydantic import BaseModel
 
@@ -90,6 +92,14 @@ BackplaneListener = Callable[[Any], Union[None, Awaitable[None]]]
 
 
 class BackplaneBase(ABC):
+    @abstractmethod
+    async def start(self):
+        ...
+
+    @abstractmethod
+    async def stop(self):
+        ...
+
     def publish(self, channel: str, data: Any):
         return self.publish_many([channel], data)
 
@@ -135,6 +145,54 @@ class BackplaneBase(ABC):
         ...
 
 
+class InMemoryBackplane(BackplaneBase):
+    # TODO check if something is wrong here, i wrote this without check if it's ok
+
+    def __init__(self):
+        self._keys = {}
+        self._channels: Dict[str, List[asyncio.Queue]] = {}
+
+    async def start(self):
+        pass
+
+    async def stop(self):
+        pass
+
+    async def publish_many(self, channels: List[str], data: Any):
+        for channel in channels:
+            queues = self._channels[channel]
+            for q in queues:
+                try:
+                    q.put_nowait(data)
+                except asyncio.QueueFull:
+                    warnings.warn(f"InMemoryBackplane failed to put a message to the queue: the queue is full! Channel name is \"{channel}\"")
+
+    async def attach_queue(self, channel: str, queue: asyncio.Queue):
+        if channel in self._channels:
+            if queue not in self._channels[channel]:
+                self._channels[channel].append(queue)
+        else:
+            self._channels[channel] = [queue]
+
+    async def detach_queue(self, channel: str, queue: asyncio.Queue):
+        if channel in self._channels and queue in self._channels[channel]:
+            self._channels[channel].remove(queue)
+
+    async def set(self, key: str, value: Any, ttl: Optional[timedelta] = None):
+        self._keys[key] = {
+            "value": value,
+            "ttl": ttl,
+            "expires_at": datetime.now() + ttl
+        }
+
+    async def get(self, key: str) -> Any:
+        entry = self._keys.get(key)
+        if entry and entry["expires_at"] > datetime.now():
+            return entry["value"]
+        elif entry:
+            del self._keys[key]
+
+
 class RedisBackplane(BackplaneBase):
     async def set(self, key: str, value: Any, ttl: Optional[timedelta] = None):
         await self._redis.set(
@@ -160,8 +218,8 @@ class RedisBackplane(BackplaneBase):
             return None
         return value
 
-    def __init__(self, redis_url: str):
-        self._redis = aioredis.from_url(redis_url)
+    def __init__(self, redis: Redis):
+        self._redis = redis
         self._listeners: Dict[str, List[asyncio.Queue]] = {}
         self._pubsub = self._redis.pubsub()
         self._receiver_task: Optional[asyncio.Task] = None
@@ -231,13 +289,15 @@ class RedisBackplane(BackplaneBase):
         await self._pubsub.unsubscribe(channel)
 
 
-_backplane: Optional[RedisBackplane] = None
+_backplane: Optional[BackplaneBase] = None
 
 
-async def start_backplane(redis_url: str):
+async def start_backplane(
+        backplane: BackplaneBase
+):
     global _backplane
     assert _backplane is None, "You can't initialize backplane twice"
-    _backplane = RedisBackplane(redis_url)
+    _backplane = backplane
     await _backplane.start()
 
 

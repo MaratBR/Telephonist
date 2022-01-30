@@ -1,74 +1,54 @@
 import asyncio
+import os
+import subprocess
 import uuid
+from pathlib import Path
 
-import docker
 import pytest
-from docker.models.containers import Container
 from fastapi.testclient import TestClient
+from motor.motor_asyncio import AsyncIOMotorClient
 
 from server.app import create_app
+from server.internal.channels.backplane import InMemoryBackplane
 from server.settings import settings
 
-docker_client = docker.from_env()
+
+MONGODB_PORT = 27222
+
 settings.redis_url = "redis://localhost:7379"
-settings.mongodb_db_name = "test_database"
-settings.db_url = "mongodb://localhost:27200"
+settings.mongodb_db_name = "test_database" + uuid.uuid4().hex
+settings.db_url = f"mongodb://localhost:{MONGODB_PORT}"
 settings.is_testing = True
 
 
+@pytest.yield_fixture(scope="session")
+def mongodb_server():
+    r = subprocess.run(["mongod", "--help"], capture_output=True)
+    assert r.returncode == 0, "mongod executable is not available"
+    data_path = "/tmp/TELEPHONIST" + str(uuid.uuid4())
+    Path(data_path).mkdir(parents=True, exist_ok=True)
+    proc = subprocess.Popen(["mongod", "--dbpath", data_path, "--port", str(MONGODB_PORT)], stdout=subprocess.PIPE)
+    yield proc
+    proc.kill()
+    os.system(f"rm -rf {data_path}")
+
+
 def create_test_app():
-    app = create_app()
+    app = create_app(backplane=InMemoryBackplane())
 
     @app.on_event("startup")
     async def create_test_users():
         from server.models.auth import User
-
         tasks = []
-        for i in range(5):
-            tasks.append(User.create_user(f"TEST{i + 1}", f"TEST{i + 1}"))
+        for i in range(10):
+            tasks.append(User.create_user(f"TEST{i}", f"TEST{i}", password_reset_required=i % 2 == 0))
         await asyncio.gather(*tasks)
 
     return app
 
 
-def _kill_old_containers():
-    for c in docker_client.containers.list(filters={"label": "telephonist-testing"}):
-        c: Container
-        c.kill()
-        c.remove()
-
-
-@pytest.yield_fixture(scope="session")
-def redis_container():
-    _kill_old_containers()
-    container: Container = docker_client.containers.run(
-        "redis",
-        name="telephonist-testing-redis-" + uuid.uuid4().hex,
-        detach=True,
-        ports={6379: 7379},
-        auto_remove=True,
-        labels=["telephonist-testing"],
-    )
-    yield container
-    container.remove(force=True)
-
-
-@pytest.yield_fixture(scope="session")
-def mongodb_container():
-    _kill_old_containers()
-    container: Container = docker_client.containers.run(
-        "mongo",
-        name="telephonist-testing-mongodb-" + uuid.uuid4().hex,
-        detach=True,
-        ports={27017: 27200},
-        auto_remove=True,
-    )
-    yield container
-    container.remove(force=True)
-
-
 @pytest.fixture(scope="session")
-def client_no_init(mongodb_container, redis_container):
+def client_no_init(mongodb_server):
     return TestClient(create_test_app())
 
 
