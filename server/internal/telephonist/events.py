@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
 from typing import Any, Dict, Optional, Union
+from uuid import UUID
 
 from beanie import PydanticObjectId
 from fastapi import HTTPException
@@ -75,13 +76,13 @@ async def apply_sequence_updates_on_event(event: Event):
     if seq.frozen:
         seq.frozen = False
         await seq.save_changes()
-        await realtime.on_sequences_updated(seq.app_id, {"frozen": False}, [seq.id])
+        await realtime.on_sequences_updated(seq.app_id, [seq.id], {"frozen": False})
 
 
 class SequenceDescriptor(BaseModel):
     meta: Optional[Dict[str, Any]]
     description: Optional[str]
-    task_id: Optional[PydanticObjectId]
+    task_id: Optional[Union[UUID, str]]
     custom_name: Optional[str]
 
 
@@ -99,7 +100,7 @@ async def get_sequence(sequence_id: PydanticObjectId, app_id: Optional[PydanticO
 
 async def create_sequence(app_id: PydanticObjectId, descriptor: SequenceDescriptor):
     if descriptor.task_id:
-        task = await ApplicationTask.get_not_deleted(descriptor.task_id)
+        task = await ApplicationTask.find_task(descriptor.task_id)
         if task is None:
             raise HTTPException(
                 404, f"task with id {descriptor.task_id} never existed or was deleted"
@@ -179,7 +180,12 @@ async def finish_sequence(sequence: EventSequence, finish_request: FinishSequenc
     await realtime.on_sequence_updated(sequence)
 
 
-async def set_sequence_meta(sequence: EventSequence, new_meta: Dict[str, Any]):
-    sequence.meta = new_meta
+async def set_sequence_meta(
+    sequence: EventSequence, new_meta: Dict[str, Any], replace: bool = False
+):
+    if replace:
+        sequence.meta = new_meta
+    else:
+        sequence.meta.update(new_meta)
     await sequence.save_changes()
     await realtime.on_sequence_meta_updated(sequence, new_meta)

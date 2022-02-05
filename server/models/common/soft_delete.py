@@ -1,12 +1,10 @@
 from datetime import datetime
-from typing import Any, List, Mapping, Optional, Tuple, Type, TypeVar, Union
+from typing import Optional, Type, TypeVar, Union
 
 from beanie import Document, PydanticObjectId
-from beanie.odm.enums import SortDirection
-from beanie.odm.queries.find import FindMany, FindOne
+from beanie.odm.queries.find import FindOne
 from beanie.operators import Eq
 from pydantic import Field
-from pymongo.client_session import ClientSession
 
 DocType = TypeVar("DocType", bound=Union["SoftDeletes", Document])
 

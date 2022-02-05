@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from server.internal.telephonist import Errors
 from server.models.common import Pagination
-from server.models.telephonist import EventSequence, Event
+from server.models.telephonist import Event, EventSequence
 from server.utils.common import QueryDict
 
 events_router = APIRouter(prefix="/events")
@@ -46,18 +46,20 @@ class EventsFilter(BaseModel):
 
 
 @events_router.get("")
-async def get_events(
-    filter_data=QueryDict(EventsFilter),
-    pagination: EventsPagination = Depends()
-):
+async def get_events(filter_data=QueryDict(EventsFilter), pagination: EventsPagination = Depends()):
     return await pagination.paginate(Event, filter_condition=filter_data.get_filters())
 
 
 @events_router.get("/{event_id}")
 async def get_event(event_id: PydanticObjectId):
-    return Errors.raise404_if_none(await Event.get(event_id), message=f"Event with id={event_id} not found")
+    return Errors.raise404_if_none(
+        await Event.get(event_id), message=f"Event with id={event_id} not found"
+    )
 
 
 @events_router.get("/sequences/{sequence_id}")
 async def get_sequence(sequence_id: PydanticObjectId):
-    return Errors.raise404_if_none(await EventSequence.get(sequence_id), message=f"Event sequence with id={sequence_id} not found")
+    return Errors.raise404_if_none(
+        await EventSequence.get(sequence_id),
+        message=f"Event sequence with id={sequence_id} not found",
+    )

@@ -166,7 +166,9 @@ class Hub:
         try:
             assert isinstance(json_obj, dict), "Received message must be a JSON object"
             assert "msg_type" in json_obj, 'Message object does not contain "msg_type" key'
-            assert isinstance(json_obj["msg_type"], str), 'Raw message\'s "type" is not a string'
+            assert isinstance(
+                json_obj["msg_type"], str
+            ), 'Raw message\'s "task_type" is not a string'
             message = {"msg_type": json_obj["msg_type"], "data": json_obj.get("data")}
             return message
         except AssertionError as exc:

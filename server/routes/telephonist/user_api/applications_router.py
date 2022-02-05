@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from typing import *
+from uuid import UUID
 
 import fastapi
 from beanie import PydanticObjectId
@@ -14,10 +15,11 @@ from server.internal.telephonist.utils import Errors, require_model_with_id
 from server.models.common import IdProjection, Pagination, PaginationResult
 from server.models.telephonist import (
     Application,
+    ApplicationTask,
     ApplicationView,
     AppLog,
     ConnectionInfo,
-    OneTimeSecurityCode, ApplicationTask,
+    OneTimeSecurityCode,
 )
 
 _APPLICATION_NOT_FOUND = "Application not found"
@@ -49,7 +51,12 @@ async def get_applications(
 @applications_router.post("", status_code=201, responses={201: {"model": IdProjection}})
 async def create_application(_=AccessToken(), body: _internal.CreateApplication = Body(...)):
     app = await _internal.create_new_application(body)
-    return ApplicationView(**app.dict(by_alias=True))
+    return ApplicationView(**app.dict())
+
+
+@applications_router.get("/check-if-name-taken")
+async def check_if_application_name_taken(name: str = Query(...)):
+    return await Application.not_deleted().find(Application.name == name).exists()
 
 
 @applications_router.get("/{app_id}")
@@ -72,7 +79,7 @@ async def update_application(
     app_id: PydanticObjectId, update: _internal.ApplicationUpdate = Body(...)
 ):
     app = await _get_application(app_id)
-    app.name = app.name if update.name is None else update.name
+    app.display_name = app.display_name if update.display_name is None else update.display_name
     app.description = app.description if update.description is None else update.description
     app.tags = app.tags if update.tags is None else update.tags
     if update.disabled is not None and update.disabled != app.disabled:
@@ -169,7 +176,7 @@ async def define_new_application_task__user(
 
 
 @applications_router.delete("/{app_id}/defined-tasks/{task_id}")
-async def deactivate_task(app_id: PydanticObjectId, task_id: PydanticObjectId):
+async def deactivate_task(app_id: PydanticObjectId, task_id: UUID):
     task = await _internal.get_application_task(app_id, task_id)
     await _internal.deactivate_application_task(task)
     return {"detail": f"Task {task_id} has been deactivated"}
@@ -177,7 +184,7 @@ async def deactivate_task(app_id: PydanticObjectId, task_id: PydanticObjectId):
 
 @applications_router.patch("/{app_id}/defined-tasks/{task_id}")
 async def update_task(
-    app_id: PydanticObjectId, task_id: PydanticObjectId, update: _internal.TaskUpdate = Body(...)
+    app_id: PydanticObjectId, task_id: UUID, update: _internal.TaskUpdate = Body(...)
 ):
     task = await _internal.get_application_task(app_id, task_id)
     await _internal.apply_application_task_update(task, update)

@@ -56,9 +56,9 @@ class TokenModel(BaseModel):
         if token_type is not None:
             del data["__token_type"]
         if token_type not in cls.registry:
-            raise InvalidToken("invali token type: " + token_type)
+            raise InvalidToken("invali token task_type: " + token_type)
         if allowed_types and token_type not in allowed_types:
-            raise InvalidToken("disallowed token type: " + token_type)
+            raise InvalidToken("disallowed token task_type: " + token_type)
         class_ = cls.registry[token_type]
 
         try:
@@ -118,7 +118,7 @@ class PasswordResetToken(UserTokenBase):
 
 
 class UserTokenModel(UserTokenBase):
-    __token_type__ = ""  # default token type
+    __token_type__ = ""  # default token task_type
     jti: str = Field(default_factory=nanoid.generate)
     nbf: datetime = Field(default_factory=datetime.utcnow)
     is_superuser: bool

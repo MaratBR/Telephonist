@@ -2,9 +2,10 @@ import hashlib
 import json
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from beanie import PydanticObjectId
+from beanie.operators import In
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, ValidationError, parse_obj_as
 from starlette import status
@@ -12,7 +13,8 @@ from starlette import status
 from server.internal.channels import get_channel_layer
 from server.internal.telephonist import realtime
 from server.internal.telephonist.utils import CG, Errors
-from server.models.telephonist import Application, ConnectionInfo
+from server.models.common import Identifier
+from server.models.telephonist import Application, ConnectionInfo, EventSequence
 from server.models.telephonist.application_settings import get_default_settings_for_type
 from server.models.telephonist.application_task import (
     ApplicationTask,
@@ -23,7 +25,8 @@ from server.settings import settings
 
 
 class CreateApplication(BaseModel):
-    name: str
+    name: Identifier
+    display_name: str
     description: Optional[str] = Field(max_length=400)
     tags: Optional[List[str]]
     disabled: bool = False
@@ -36,13 +39,16 @@ async def create_new_application(create_application: CreateApplication):
         not in (Application.ARBITRARY_TYPE, Application.AGENT_TYPE)
         and not settings.allow_custom_application_types
     ):
-        raise HTTPException(422, "invalid application type, custom application types are disabled")
+        raise HTTPException(
+            422, "invalid application task_type, custom application types are disabled"
+        )
     if await Application.find(Application.name == create_application.name).exists():
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "Application with given name already exists",
         )
     app = Application(
+        display_name=create_application.display_name,
         name=create_application.name,
         description=create_application.description,
         disabled=create_application.disabled,
@@ -55,7 +61,7 @@ async def create_new_application(create_application: CreateApplication):
 
 
 class ApplicationUpdate(BaseModel):
-    name: Optional[str]
+    display_name: Optional[str]
     description: Optional[str] = Field(max_length=400)
     disabled: Optional[bool]
     tags: Optional[List[str]]
@@ -67,7 +73,7 @@ async def get_application(application_id: PydanticObjectId):
     )
 
 
-async def get_application_task(app_id: PydanticObjectId, task_id: PydanticObjectId):
+async def get_application_task(app_id: PydanticObjectId, task_id: UUID):
     task = await ApplicationTask.get_not_deleted(task_id)
     if task is None:
         raise HTTPException(404, f"application task with id {task_id} not found")
@@ -88,29 +94,34 @@ async def get_application_tasks(app_id: PydanticObjectId, include_deleted: bool 
 
 
 class DefineTask(BaseModel):
-    name: str
-    description: Optional[str]
-    type: Optional[TaskTypesRegistry.KeyType]
+    id: UUID = Field(alias="_id", default_factory=uuid4)  # for the sake of consistency
+    name: Identifier
+    description: str = Field(default="")
+    task_type: TaskTypesRegistry.KeyType = TaskTypesRegistry.ARBITRARY
     body: Optional[Any]
     env: Dict[str, str] = Field(default_factory=dict)
+    tags: List[str] = Field(default_factory=list)
+    triggers: List[TaskTrigger] = Field(default_factory=list)
 
 
-def parse_body_type_or_raise(body_type: Optional[TaskTypesRegistry.KeyType], body: Optional[Any]):
-    body_type = body_type or TaskTypesRegistry
+def parse_task_type_or_raise(body_type: Optional[TaskTypesRegistry.KeyType], body: Optional[Any]):
+    body_type = body_type or TaskTypesRegistry.ARBITRARY
     type_ = ApplicationTask.get_body_type(body_type)
     if type_ is None:
         if body is not None:
             raise HTTPException(
                 422,
-                f'invalid task body, body must be empty (null), since type "{body_type}" doesn\'t'
-                " allow a body",
+                f'invalid task body, body must be empty (null), since task_type "{body_type}"'
+                " doesn't allow a body",
             )
         return body_type, None
     else:
         try:
             return body_type, parse_obj_as(type_, body)
         except ValidationError:
-            raise HTTPException(422, f"invalid task body, body must be assignable to type {type_}")
+            raise HTTPException(
+                422, f"invalid task body, body must be assignable to task_type {type_}"
+            )
 
 
 async def raise_if_application_task_name_taken(app_id: PydanticObjectId, name: str):
@@ -121,25 +132,29 @@ async def raise_if_application_task_name_taken(app_id: PydanticObjectId, name: s
 
 
 async def define_application_task(app: Application, body: DefineTask):
-    task_type, task_body = parse_body_type_or_raise(body.type, body.body)
+    task_type, task_body = parse_task_type_or_raise(body.task_type, body.body)
     await raise_if_application_task_name_taken(app.id, body.name)
     task = ApplicationTask(
         app_id=app.id,
         name=body.name,
+        qualified_name=app.name + "/" + body.name,
         description=body.name,
         body=task_body,
-        type=body.type,
         task_type=task_type,
         env=body.env,
     )
     await task.insert()
-    await realtime.on_application_task_updated(task)
+    await on_application_task_updated(task)
     return task
 
 
 async def deactivate_application_task(task: ApplicationTask):
     await task.soft_delete()
-    await realtime.on_application_task_deleted(task.id, task.app_id)
+    await on_application_task_deleted(task)
+
+
+async def on_application_task_deleted(task: ApplicationTask):
+    await get_channel_layer().group_send(CG.app(task.app_id), "task_removed", task.id)
 
 
 class TaskUpdate(BaseModel):
@@ -161,36 +176,103 @@ async def apply_application_task_update(task: ApplicationTask, update: TaskUpdat
             task.body = update.body
         if update.type:
             task.task_type = update.type
-        task.task_type, task.body = parse_body_type_or_raise(task.task_type, update.type)
+        task.task_type, task.body = parse_task_type_or_raise(task.task_type, update.type)
     if update.name is not None:
         await raise_if_application_task_name_taken(task.app_id, update.name)
         task.name = update.name
+        task.qualified_name = task.qualified_name.split("/")[0] + "/" + update.name
     task.env = task.env if update.env is None else update.env
     task.triggers = task.triggers if update.triggers is None else update.triggers
     task.description = task.description if update.description is None else update.description
     task.tags = task.tags if update.tags is None else update.tags
     await task.save_changes()
-    await realtime.on_application_task_updated(task)
+    await on_application_task_updated(task)
     return task
+
+
+class DefinedTask(DefineTask):
+    last_updated: datetime
+
+    @classmethod
+    def from_db(cls, t: ApplicationTask) -> "DefinedTask":
+        return DefinedTask(
+            _id=t.id,
+            tags=t.tags,
+            env=t.env,
+            description=t.description,
+            name=t.name,
+            last_updated=t.last_updated,
+        )
+
+
+async def sync_defined_tasks(app: Application, tasks: List[DefinedTask]):
+    synced_tasks: List[DefinedTask] = [*tasks]
+    db_tasks: Dict[UUID, ApplicationTask] = {
+        t.id: t
+        for t in ApplicationTask.not_deleted().find(ApplicationTask.app_id == app.id).to_list()
+    }
+
+    for task in tasks:
+        db_task = db_tasks.get(task.id)
+        if db_task:
+            db_tasks.pop(task.id)
+            if db_task.last_updated < task.last_updated:
+                older, newer = db_task, task
+            else:
+                newer, older = task, db_task
+
+            older.last_updated = newer.last_updated
+            older.env = newer.env
+            older.description = newer.description
+            older.tags = newer.tags
+            older.body = newer.body
+            older.name = newer.name
+            older.task_type, older.body = parse_task_type_or_raise(newer.task_type, newer.body)
+            if older is db_task:
+                await db_task.replace()
+            synced_tasks.append(task)
+        else:
+            task.task_type, task.body = parse_task_type_or_raise(task.task_type, task.body)
+            db_task = ApplicationTask(
+                name=task.name,
+                qualified_name=app.name + "/" + db_task,
+                app_id=app.id,
+                description=task.description,
+                tags=task.tags,
+                env=task.env,
+                body=task.body,
+                triggers=task.triggers,
+            )
+            await db_task.insert()
+
+    synced_tasks += [DefinedTask.from_db(t) for t in db_tasks.values()]
+
+    return sorted(synced_tasks, key=lambda t: t.name)
+
+
+async def on_application_task_updated(task: ApplicationTask):
+    await realtime.publish_entry_update(
+        [CG.entry("application", task.app_id)],
+        realtime.EntryUpdate(entry_type="application_task", entry=task, id=task.id),
+    )
+    await get_channel_layer().group_send(
+        CG.app(task.app_id), "task_updated", DefinedTask.from_db(task)
+    )
 
 
 class ApplicationClientInfo(BaseModel):
     name: str
     version: str
-    compatibility_uuid: UUID
+    compatibility_key: str
     os_info: str
     connection_uuid: UUID
-    machine_id: str = Field(max_length=50)
+    machine_id: str = Field(max_length=200)
     instance_id: Optional[UUID]
-    __fingerprint: Optional[str] = None
 
-    @property
-    def fingerprint(self):
-        if self.__fingerprint is None:
-            self.__fingerprint = hashlib.sha256(
-                json.dumps([1, self.name, str(self.compatibility_uuid)])  # fingerprint version
-            ).hexdigest()
-        return self.__fingerprint
+    def get_fingerprint(self):
+        return hashlib.sha256(
+            json.dumps([1, self.name, self.compatibility_key]).encode()  # 1 - fingerprint version
+        ).hexdigest()
 
 
 async def get_or_create_connection(
@@ -205,7 +287,7 @@ async def get_or_create_connection(
             client_name=info.name,
             client_version=info.version,
             app_id=app_id,
-            fingerprint=info.fingerprint,
+            fingerprint=info.get_fingerprint(),
             os=info.os_info,
             is_connected=True,
             machine_id=info.machine_id,
@@ -223,7 +305,7 @@ async def get_or_create_connection(
         connection.app_id = app_id
         connection.client_name = info.name
         connection.client_version = info.version
-        connection.fingerprint = info.fingerprint
+        connection.fingerprint = info.get_fingerprint()
         connection.ip = ip_address
         await connection.save_changes()
     await realtime.on_connection_info_changed(connection)
@@ -235,6 +317,14 @@ async def on_connection_disconnected(connection: ConnectionInfo):
     connection.expires_at = datetime.utcnow() + timedelta(hours=12)
     connection.disconnected_at = datetime.utcnow()
     await connection.save_changes()
+    await realtime.on_connection_info_changed(connection)
+
+
+async def set_sequences_frozen(
+    app_id: PydanticObjectId, sequences_ids: List[PydanticObjectId], frozen: bool
+):
+    await EventSequence.find(In("_id", sequences_ids)).update({"frozen": frozen})
+    await realtime.on_sequences_updated(app_id, sequences_ids, {"frozen": frozen})
 
 
 async def add_connection_subscription(connection_id: UUID, events: List[str]):

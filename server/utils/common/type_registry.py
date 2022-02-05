@@ -15,4 +15,8 @@ class TypeRegistry(Generic[TBound], Dict[str, Type[TBound]]):
         assert key not in self, f"{key} is already registered in a {type(self).__name__}"
         self[key] = type_
 
+    def require(self, key: str):
+        assert key in self, f"{key} is missing in {type(self).__name__}"
+        return key
+
     KeyType: Type[str] = str

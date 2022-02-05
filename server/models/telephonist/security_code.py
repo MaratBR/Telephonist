@@ -19,7 +19,7 @@ def generate_security_code(length: int = 8):
 class OneTimeSecurityCode(Document):
     DEFAULT_LIFETIME = timedelta(minutes=10)
 
-    id: str = Field(default_factory=generate_security_code, alias="_id")
+    id: str = Field(default_factory=generate_security_code)
     expires_at: datetime
     code_type: str
     confirmed: bool = False

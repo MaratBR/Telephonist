@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 
-from aioredis import Redis
+import aioredis
 from fastapi import FastAPI
 from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.middleware.cors import CORSMiddleware
@@ -15,8 +15,7 @@ from server.settings import settings
 
 
 def create_app(
-    motor_client: Optional[AsyncIOMotorClient] = None,
-    backplane: Optional[BackplaneBase] = None
+    motor_client: Optional[AsyncIOMotorClient] = None, backplane: Optional[BackplaneBase] = None
 ):
     app = FastAPI()
     logger = logging.getLogger("telephonist.application")
@@ -28,8 +27,8 @@ def create_app(
         allow_headers=["*"],
     )
     app.include_router(auth_api_router)
-    app.include_router(user_api_router)
     app.include_router(application_api_router)
+    app.include_router(user_api_router)
 
     @app.get("/")
     def index(request: Request):
@@ -43,7 +42,9 @@ def create_app(
     async def _on_startup():
         try:
             await init_database(client=motor_client)
-            await start_backplane(backplane or RedisBackplane(settings.redis_url))
+            await start_backplane(
+                backplane or RedisBackplane(aioredis.from_url(settings.redis_url))
+            )
             await get_channel_layer().start()
         except Exception as exc:
             logger.exception(str(exc))

@@ -1,5 +1,5 @@
 import jsonschema
-from jsonschema.protocols import Validator  # type: ignore
+from jsonschema.protocols import Validator  # task_type: ignore
 
 from server.settings import settings
 

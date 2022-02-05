@@ -21,7 +21,7 @@ TModelType = TypeVar("TModelType")  # bound=Type[Document]
 
 
 def register_model(model: TModelType) -> TModelType:
-    assert issubclass(model, Document), "model must subclass Document type"
+    assert issubclass(model, Document), "model must subclass Document task_type"
     _models.add(model)
     return model
 

@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Any, Optional
+from uuid import UUID
 
 from beanie import Document, PydanticObjectId
 from pydantic import Field
@@ -11,7 +12,7 @@ from server.database import register_model
 class Event(Document):
     app_id: PydanticObjectId
     task_name: Optional[str]
-    task_id: Optional[PydanticObjectId]
+    task_id: Optional[UUID]
     sequence_id: Optional[PydanticObjectId]
     event_key: str
     event_type: str

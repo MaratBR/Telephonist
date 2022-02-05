@@ -8,26 +8,23 @@ from pydantic import BaseModel
 
 from server import VERSION
 from server.internal.auth.dependencies import AccessToken
-from server.internal.channels import WSTicketModel, WSTicket
-from server.internal.channels.hub import ws_controller, Hub, bind_message
+from server.internal.channels import WSTicket, WSTicketModel
+from server.internal.channels.hub import Hub, bind_message, ws_controller
 from server.internal.telephonist import CG
 from server.models.auth import User
-from server.models.common import IdProjection, Identifier
+from server.models.common import Identifier, IdProjection
 from server.models.telephonist import Application
 
 ws_router = APIRouter(prefix="/ws")
 
 
 @ws_router.get("/issue-ws-ticket")
-async def issue_ws_ticket(token=AccessToken()):
+async def issue_user_ws_ticket(token=AccessToken()):
     exp = datetime.utcnow() + timedelta(minutes=5)
-    return {
-        "ticket": WSTicketModel[User](exp=exp, sub=token.sub).encode(),
-        "exp": exp
-    }
+    return {"ticket": WSTicketModel[User](exp=exp, sub=token.sub).encode(), "exp": exp}
 
 
-@ws_controller(ws_router, "")
+@ws_controller(ws_router, "/")
 class UserHub(Hub):
     ticket: WSTicketModel[User] = WSTicket(User)
 

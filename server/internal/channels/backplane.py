@@ -11,7 +11,6 @@ from functools import partial
 from typing import *
 from uuid import UUID
 
-import aioredis
 import msgpack
 from aioredis import Redis
 from beanie import PydanticObjectId
@@ -165,7 +164,10 @@ class InMemoryBackplane(BackplaneBase):
                 try:
                     q.put_nowait(data)
                 except asyncio.QueueFull:
-                    warnings.warn(f"InMemoryBackplane failed to put a message to the queue: the queue is full! Channel name is \"{channel}\"")
+                    warnings.warn(
+                        "InMemoryBackplane failed to put a message to the queue: the queue is"
+                        f' full! Channel name is "{channel}"'
+                    )
 
     async def attach_queue(self, channel: str, queue: asyncio.Queue):
         if channel in self._channels:
@@ -179,11 +181,7 @@ class InMemoryBackplane(BackplaneBase):
             self._channels[channel].remove(queue)
 
     async def set(self, key: str, value: Any, ttl: Optional[timedelta] = None):
-        self._keys[key] = {
-            "value": value,
-            "ttl": ttl,
-            "expires_at": datetime.now() + ttl
-        }
+        self._keys[key] = {"value": value, "ttl": ttl, "expires_at": datetime.now() + ttl}
 
     async def get(self, key: str) -> Any:
         entry = self._keys.get(key)
@@ -292,9 +290,7 @@ class RedisBackplane(BackplaneBase):
 _backplane: Optional[BackplaneBase] = None
 
 
-async def start_backplane(
-        backplane: BackplaneBase
-):
+async def start_backplane(backplane: BackplaneBase):
     global _backplane
     assert _backplane is None, "You can't initialize backplane twice"
     _backplane = backplane

@@ -18,6 +18,7 @@ class Application(SoftDeletes):
     ARBITRARY_TYPE: ClassVar[str] = "arbitrary"
     AGENT_TYPE: ClassVar[str] = "agent"
 
+    display_name: str
     name: Indexed(str, unique=True)
     description: Optional[str] = None
     disabled: bool = False

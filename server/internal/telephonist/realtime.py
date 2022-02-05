@@ -1,4 +1,5 @@
 from typing import *
+from uuid import UUID
 
 from beanie import PydanticObjectId
 from pydantic import BaseModel
@@ -54,7 +55,7 @@ async def publish_entry_updates(groups: List[str], updates: List[EntryUpdate]):
 
 
 async def on_sequences_updated(
-    app_id: PydanticObjectId, update: dict, sequences: List[PydanticObjectId]
+    app_id: PydanticObjectId, sequences: List[PydanticObjectId], update: dict
 ):
     await publish_entry_updates(
         [CG.entry("application", app_id)],
@@ -88,12 +89,16 @@ async def on_connection_info_changed(connection_info: ConnectionInfo):
 
 async def on_application_task_updated(task: ApplicationTask):
     await publish_entry_update(
-        [CG.entry("application", task.app_id), CG.app(task.app_id)],
+        [CG.entry("application", task.app_id)],
         EntryUpdate(id=task.id, entry_type="application_task", entry=task),
+    )
+    await get_channel_layer().group_send(
+        CG.app(task.app_id),
+        "task_updated",
     )
 
 
-async def on_application_task_deleted(task_id: PydanticObjectId, app_id: PydanticObjectId):
+async def on_application_task_deleted(task_id: UUID, app_id: PydanticObjectId):
     await publish_entry_update(
         [CG.entry("application", app_id), CG.app(app_id)],
         EntryUpdate(id=task_id, entry_type="application_task", entry=None),
@@ -104,5 +109,5 @@ async def on_application_disabled(app_id: PydanticObjectId, disabled: bool):
     await get_channel_layer().group_send(CG.app(app_id), "app_disabled", {"disabled": disabled})
     await publish_entry_update(
         [CG.entry("application", app_id)],
-        EntryUpdate(id=app_id, entry_type="application", entry={"disabled"}),
+        EntryUpdate(id=app_id, entry_type="application", entry={"disabled": disabled}),
     )

@@ -2,10 +2,13 @@ import abc
 from typing import TYPE_CHECKING, Optional, Type, TypeVar
 
 from beanie import Document, PydanticObjectId
-from fastapi import Depends, Query
+from fastapi import Depends, HTTPException, Query
 from pydantic import validator
+from starlette.websockets import WebSocket
 
+from server.internal.auth.exceptions import InvalidToken
 from server.internal.auth.token import JWT, TokenModel
+from server.internal.channels.wscode import WSC_UNAUTHORIZED
 
 
 class ConcreteWSTicket(abc.ABC, TokenModel):
@@ -41,9 +44,12 @@ TDoc = TypeVar("TDoc", bound=Document)
 
 
 def WSTicket(model_class: Type[TDoc]) -> WSTicketModel[TDoc]:
-    jwt_type = JWT[WSTicketModel[model_class]]
-
-    def dependency(ticket: str = Query(...)):
-        return jwt_type(ticket).model
+    async def dependency(ws: WebSocket, ticket: str = Query(...)):
+        try:
+            return JWT[WSTicketModel[model_class]](ticket).model
+        except InvalidToken:
+            await ws.close(WSC_UNAUTHORIZED)
+        except HTTPException:
+            await ws.close(1011)
 
     return Depends(dependency)

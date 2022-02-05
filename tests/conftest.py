@@ -6,12 +6,10 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from motor.motor_asyncio import AsyncIOMotorClient
 
 from server.app import create_app
 from server.internal.channels.backplane import InMemoryBackplane
 from server.settings import settings
-
 
 MONGODB_PORT = 27222
 
@@ -27,7 +25,9 @@ def mongodb_server():
     assert r.returncode == 0, "mongod executable is not available"
     data_path = "/tmp/TELEPHONIST" + str(uuid.uuid4())
     Path(data_path).mkdir(parents=True, exist_ok=True)
-    proc = subprocess.Popen(["mongod", "--dbpath", data_path, "--port", str(MONGODB_PORT)], stdout=subprocess.PIPE)
+    proc = subprocess.Popen(
+        ["mongod", "--dbpath", data_path, "--port", str(MONGODB_PORT)], stdout=subprocess.PIPE
+    )
     yield proc
     proc.kill()
     os.system(f"rm -rf {data_path}")
@@ -39,9 +39,12 @@ def create_test_app():
     @app.on_event("startup")
     async def create_test_users():
         from server.models.auth import User
+
         tasks = []
         for i in range(10):
-            tasks.append(User.create_user(f"TEST{i}", f"TEST{i}", password_reset_required=i % 2 == 0))
+            tasks.append(
+                User.create_user(f"TEST{i}", f"TEST{i}", password_reset_required=i % 2 == 0)
+            )
         await asyncio.gather(*tasks)
 
     return app
