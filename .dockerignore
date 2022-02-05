@@ -1,0 +1,6 @@
+.env
+certs/
+scripts/
+tests/
+.pre-commit-config.yaml
+Makefile

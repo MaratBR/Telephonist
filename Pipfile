@@ -1,0 +1,30 @@
+[[source]]
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+fastapi = "*"
+beanie = "*"
+uvicorn = "*"
+email-validator = "*"
+aioredis = "*"
+passlib = "*"
+nanoid = "*"
+python-multipart = "*"
+websockets = "*"
+python-jose = {extras = ["cryptography"], version = "*"}
+bcrypt = "*"
+msgpack = "*"
+pydantic = {extras = ["dotenv"], version = "*"}
+
+[dev-packages]
+pytest = "*"
+black = "*"
+isort = "*"
+flake8 = "*"
+pytest-asyncio = "*"
+pre-commit = "*"
+
+[requires]
+python_version = "3.9"

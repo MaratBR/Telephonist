@@ -2,8 +2,8 @@ isort := isort
 black := black
 
 format:
-	$(isort) server tests main.py
-	$(black) --experimental-string-processing server tests main.py
+	$(isort) server tests *.py
+	$(black) --experimental-string-processing server tests *.py
 
 prepare:
 	pre-commit install
