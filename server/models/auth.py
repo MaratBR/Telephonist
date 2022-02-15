@@ -5,13 +5,18 @@ from typing import *
 
 from beanie import Document, PydanticObjectId
 from beanie.operators import Eq
-from pydantic import BaseModel, EmailStr, Field, root_validator
+from pydantic import EmailStr, Field, root_validator
 from starlette.datastructures import Address
 from starlette.requests import Request
 
 from server.database import register_model
 from server.internal.auth.token import UserTokenModel
-from server.internal.auth.utils import create_static_key, hash_password, verify_password
+from server.internal.auth.utils import (
+    create_static_key,
+    hash_password,
+    verify_password,
+)
+from server.models.common import AppBaseModel
 from server.settings import settings
 
 
@@ -29,7 +34,7 @@ class User(Document):
     def set_password(self, password: str):
         self.password_hash = hash_password(password)
         self.password_reset_required = False
-        self.last_password_changed = datetime.utcnow()
+        self.last_password_changed = datetime.now()
 
     def __str__(self):
         return self.username
@@ -45,7 +50,7 @@ class User(Document):
             sub=self.id,
             is_superuser=self.is_superuser,
             username=self.username,
-            exp=datetime.utcnow() + lifetime,
+            exp=datetime.now() + lifetime,
             check_string=check_string,
         )
 
@@ -59,7 +64,9 @@ class User(Document):
         return None
 
     @classmethod
-    async def by_username(cls, username: str, include_disabled: bool = False) -> Optional["User"]:
+    async def by_username(
+        cls, username: str, include_disabled: bool = False
+    ) -> Optional["User"]:
         q = cls if include_disabled else cls.find(cls.disabled == False)
         q = cls.find(cls.username == username)
         q = q.limit(1)
@@ -93,7 +100,9 @@ class User(Document):
             cls.normalized_username == settings.default_username.upper()
         ).exists():
             await cls.create_user(
-                settings.default_username, settings.default_password, password_reset_required=True
+                settings.default_username,
+                settings.default_password,
+                password_reset_required=True,
             )
 
     @classmethod
@@ -112,7 +121,7 @@ class User(Document):
         indexes = ["email", "disabled", "normalized_username"]
 
 
-class UserView(BaseModel):
+class UserView(AppBaseModel):
     username: str
     disabled: bool
     id: PydanticObjectId = Field(alias="_id")
@@ -163,11 +172,13 @@ class RefreshToken(Document):
         return await cls.find_one(
             cls.id == cls._make_token_id(token),
             Eq(cls.blocked, False),
-            cls.expiration_date > datetime.utcnow(),
+            cls.expiration_date > datetime.now(),
         )
 
     @classmethod
-    async def create_token(cls, user: User, lifetime: timedelta) -> Tuple["RefreshToken", str]:
+    async def create_token(
+        cls, user: User, lifetime: timedelta
+    ) -> Tuple["RefreshToken", str]:
         token = create_static_key(40)
         refresh_token = cls(
             user_id=user.id,
@@ -178,9 +189,9 @@ class RefreshToken(Document):
         return refresh_token, token
 
     def matches(self, token: str):
-        return self.id == base64.urlsafe_b64encode(hashlib.sha256(token).digest())[:43].decode(
-            "ascii"
-        )
+        return self.id == base64.urlsafe_b64encode(
+            hashlib.sha256(token).digest()
+        )[:43].decode("ascii")
 
     @staticmethod
     def _make_token_id(token: str):
@@ -212,4 +223,9 @@ class AuthLog(Document):
             address = ip_address_or_request.host
         else:
             address = ip_address_or_request
-        await cls(user_agent=user_agent, event=event, user_id=user_id, ip_address=address).insert()
+        await cls(
+            user_agent=user_agent,
+            event=event,
+            user_id=user_id,
+            ip_address=address,
+        ).insert()

@@ -1,10 +1,12 @@
 from typing import *
 
 from fastapi import Depends, HTTPException
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 from starlette.requests import Request
 
-T = TypeVar("T", bound=BaseModel)
+from server.models.common import AppBaseModel
+
+T = TypeVar("T", bound=AppBaseModel)
 
 
 def QueryDict(model: Type[T]) -> T:  # noqa

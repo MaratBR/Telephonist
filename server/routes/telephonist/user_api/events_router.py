@@ -3,10 +3,10 @@ from typing import Optional
 
 from beanie import PydanticObjectId
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from server.internal.telephonist import Errors
-from server.models.common import Pagination
+from server.models.common import AppBaseModel, Pagination
 from server.models.telephonist import Event, EventSequence
 from server.utils.common import QueryDict
 
@@ -19,12 +19,11 @@ class EventsPagination(Pagination):
     ordered_by_options = {"event_type", "task_name", "created_at", "_id"}
 
 
-class EventsFilter(BaseModel):
+class EventsFilter(AppBaseModel):
     event_type: Optional[str]
     task_name: Optional[str]
     event_key: Optional[str]
     app_id: Optional[PydanticObjectId]
-    limit: Optional[int] = Field(gt=1, lt=5000)
     before: Optional[datetime]
     sequence_id: Optional[PydanticObjectId]
 
@@ -46,14 +45,20 @@ class EventsFilter(BaseModel):
 
 
 @events_router.get("")
-async def get_events(filter_data=QueryDict(EventsFilter), pagination: EventsPagination = Depends()):
-    return await pagination.paginate(Event, filter_condition=filter_data.get_filters())
+async def get_events(
+    filter_data=QueryDict(EventsFilter),
+    pagination: EventsPagination = Depends(),
+):
+    return await pagination.paginate(
+        Event, filter_condition=filter_data.get_filters()
+    )
 
 
 @events_router.get("/{event_id}")
 async def get_event(event_id: PydanticObjectId):
     return Errors.raise404_if_none(
-        await Event.get(event_id), message=f"Event with id={event_id} not found"
+        await Event.get(event_id),
+        message=f"Event with id={event_id} not found",
     )
 
 

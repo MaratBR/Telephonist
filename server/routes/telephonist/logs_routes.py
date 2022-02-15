@@ -4,26 +4,32 @@ from typing import Any, Optional
 from beanie import PydanticObjectId
 from beanie.odm.enums import SortDirection
 from fastapi import APIRouter, Body, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from server.internal.auth.dependencies import AccessToken
 from server.internal.channels import WSTicket, WSTicketModel
 from server.internal.channels.hub import Hub, bind_message, ws_controller
-from server.models.telephonist import Application, AppLog, EventSequence, Severity
+from server.models.common import AppBaseModel
+from server.models.telephonist import (
+    Application,
+    AppLog,
+    EventSequence,
+    Severity,
+)
 from server.routes.telephonist.utils import get_application_from_key
 from server.utils.common import QueryDict
 
 logs_router = APIRouter(prefix="/logs", tags=["logs"])
 
 
-class LogBody(BaseModel):
+class LogBody(AppBaseModel):
     body: Any
     sequence_id: Optional[PydanticObjectId]
     severity: Severity = Severity.UNKNOWN
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class GetLogs(BaseModel):
+class GetLogs(AppBaseModel):
     before: Optional[datetime]
     after: Optional[datetime]
 
@@ -51,15 +57,20 @@ async def export_logs(app_id: PydanticObjectId):
 
 @logs_router.post("/add")
 async def create_log_entry(
-    body: LogBody = Body(...), app: Application = Depends(get_application_from_key)
+    body: LogBody = Body(...),
+    app: Application = Depends(get_application_from_key),
 ):
     if body.sequence_id:
         seq = await EventSequence.get(body.sequence_id)
         if seq is None:
-            raise HTTPException(404, f"sequence with id {body.sequence_id} does not exist")
+            raise HTTPException(
+                404, f"sequence with id {body.sequence_id} does not exist"
+            )
         if seq.app_id != app.id:
             raise HTTPException(
-                401, f"this application ({app.id}) has no access to sequence {seq.id}"
+                401,
+                f"this application ({app.id}) has no access to sequence"
+                f" {seq.id}",
             )
         task_name = seq.task_name
     else:

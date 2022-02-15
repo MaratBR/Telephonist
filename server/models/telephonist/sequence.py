@@ -3,10 +3,12 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from beanie import Document, PydanticObjectId
+from beanie import Link, PydanticObjectId
 from pydantic import Field
 
 from server.database import register_model
+from server.models.common import BaseDocument
+from server.models.telephonist import Application
 
 
 class EventSequenceState(str, enum.Enum):
@@ -25,8 +27,9 @@ class EventSequenceState(str, enum.Enum):
 
 
 @register_model
-class EventSequence(Document):
+class EventSequence(BaseDocument):
     name: str
+    app: Optional[Link[Application]]
     app_id: PydanticObjectId
     finished_at: Optional[datetime]
     description: Optional[str]
@@ -34,7 +37,9 @@ class EventSequence(Document):
     state: EventSequenceState = EventSequenceState.IN_PROGRESS
     task_name: Optional[str]
     task_id: Optional[UUID]
-    expires_at: datetime = Field(default_factory=lambda: datetime.utcnow() + timedelta(days=3))
+    expires_at: datetime = Field(
+        default_factory=lambda: datetime.now() + timedelta(days=3)
+    )
     frozen: bool = False
     error: Optional[str] = None
     connection_id: Optional[UUID]

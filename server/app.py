@@ -8,14 +8,19 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 
 from server.database import init_database, shutdown_database
-from server.internal.channels import get_channel_layer, start_backplane, stop_backplane
+from server.internal.channels import (
+    get_channel_layer,
+    start_backplane,
+    stop_backplane,
+)
 from server.internal.channels.backplane import BackplaneBase, RedisBackplane
 from server.routes import *
 from server.settings import settings
 
 
 def create_app(
-    motor_client: Optional[AsyncIOMotorClient] = None, backplane: Optional[BackplaneBase] = None
+    motor_client: Optional[AsyncIOMotorClient] = None,
+    backplane: Optional[BackplaneBase] = None,
 ):
     app = FastAPI()
     logger = logging.getLogger("telephonist.application")
@@ -30,6 +35,10 @@ def create_app(
     app.include_router(application_api_router)
     app.include_router(user_api_router)
 
+    # see https://github.com/tiangolo/fastapi/pull/2640
+    # (when it's merged we can remove ws_root_router and replace it with something else)
+    app.include_router(ws_root_router)
+
     @app.get("/")
     def index(request: Request):
         return {
@@ -43,7 +52,8 @@ def create_app(
         try:
             await init_database(client=motor_client)
             await start_backplane(
-                backplane or RedisBackplane(aioredis.from_url(settings.redis_url))
+                backplane
+                or RedisBackplane(aioredis.from_url(settings.redis_url))
             )
             await get_channel_layer().start()
         except Exception as exc:

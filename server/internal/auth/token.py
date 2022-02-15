@@ -14,15 +14,16 @@ from typing import (
 
 import nanoid
 from beanie import PydanticObjectId
-from pydantic import BaseModel, Field, ValidationError, validator
+from pydantic import Field, ValidationError, validator
 
 from server.internal.auth.exceptions import InvalidToken
 from server.internal.auth.utils import decode_token_raw, encode_token_raw
+from server.models.common import AppBaseModel
 
 T = TypeVar("T", bound="TokenModel")
 
 
-class TokenModel(BaseModel):
+class TokenModel(AppBaseModel):
     __token_type__: ClassVar[str]
     registry: ClassVar[Dict[str, Type["TokenModel"]]] = {}
     exp: datetime
@@ -38,7 +39,9 @@ class TokenModel(BaseModel):
     @classmethod
     def decode(cls: Type[T], token_string: str) -> T:
         if cls is TokenModel:
-            raise RuntimeError("decode method can only be called on derived classes")
+            raise RuntimeError(
+                "decode method can only be called on derived classes"
+            )
         return cls._decode_types(token_string, allowed_types=[cls])
 
     def encode(self):
@@ -99,7 +102,11 @@ else:
 
     class JWTMeta(type):
         def __getitem__(self, item: Type[TokenModel]):
-            return type(f"JWT[{item.__name__}]", (JWTWrapper,), {"__model_type__": item})
+            return type(
+                f"JWT[{item.__name__}]",
+                (JWTWrapper,),
+                {"__model_type__": item},
+            )
 
     class JWT(metaclass=JWTMeta):
         pass

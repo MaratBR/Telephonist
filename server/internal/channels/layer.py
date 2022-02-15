@@ -6,9 +6,12 @@ from datetime import datetime, timedelta
 from typing import *
 
 import nanoid
-from pydantic import BaseModel
 
-from server.internal.channels.backplane import BackplaneBase, get_default_backplane
+from server.internal.channels.backplane import (
+    BackplaneBase,
+    get_default_backplane,
+)
+from server.models.common import AppBaseModel
 
 _PREFIX = "CL."
 
@@ -29,7 +32,7 @@ class HubProxy(ABC):
         ...
 
     def send(self, msg_type: str, message: Any):
-        if isinstance(message, BaseModel):
+        if isinstance(message, AppBaseModel):
             message = message.dict(by_alias=True)
         return self._send(msg_type, message)
 
@@ -65,13 +68,17 @@ class Connection(HubProxy):
             await self._backplane.detach_queue(_PREFIX + group, self._queue)
 
     async def __aenter__(self):
-        assert not self._active, "Connection cannot be activated if it's already active"
+        assert (
+            not self._active
+        ), "Connection cannot be activated if it's already active"
         self._active = True
         for group in self._groups:
             await self._backplane.attach_queue(_PREFIX + group, self._queue)
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        assert self._active, "Connection cannot be deactivate when it's already deactivated"
+        assert (
+            self._active
+        ), "Connection cannot be deactivate when it's already deactivated"
         self._active = False
         for group in self._groups:
             await self._backplane.detach_queue(_PREFIX + group, self._queue)
@@ -85,7 +92,8 @@ class Connection(HubProxy):
             channel, message = await self._queue.get()
             if not channel.startswith(_PREFIX):
                 _logger.warning(
-                    'received a message from channel "%s" that doesn\'t start with a prefix %s',
+                    'received a message from channel "%s" that doesn\'t start'
+                    " with a prefix %s",
                     channel,
                     _PREFIX,
                 )
@@ -95,7 +103,9 @@ class Connection(HubProxy):
 
 
 class ChannelLayer:
-    def __init__(self, keep_alive_timeout: timedelta, backplane: BackplaneBase):
+    def __init__(
+        self, keep_alive_timeout: timedelta, backplane: BackplaneBase
+    ):
         if keep_alive_timeout.total_seconds() == 0:
             raise ValueError("Keep-alive timeout cannot be zero")
         self._backplane = backplane
@@ -109,7 +119,9 @@ class ChannelLayer:
         if self._initialized:
             return
         self._initialized = True
-        self._internal_messages_task = asyncio.create_task(self._internal_messages())
+        self._internal_messages_task = asyncio.create_task(
+            self._internal_messages()
+        )
 
     async def dispose(self):
         if not self._initialized:
@@ -138,7 +150,9 @@ class ChannelLayer:
         if msg_type == "disconnect_connection":
             connection_id = data.get("connection_id")
             if connection_id in self._connections:
-                await self._connections[connection_id].send("__disconnect__", None)
+                await self._connections[connection_id].send(
+                    "__disconnect__", None
+                )
 
     if TYPE_CHECKING:
 
@@ -163,7 +177,9 @@ class ChannelLayer:
         layer_id, connection_id = self._parse_id(connection_id)
         if layer_id == self._id:
             if connection_id in self._connections:
-                await self._connections[connection_id].send("__disconnect__", None)
+                await self._connections[connection_id].send(
+                    "__disconnect__", None
+                )
         else:
             await self._backplane.publish(
                 "__internal:" + layer_id,
@@ -195,5 +211,7 @@ _channel_layer: Optional[ChannelLayer] = None
 def get_channel_layer():
     global _channel_layer
     if _channel_layer is None:
-        _channel_layer = ChannelLayer(timedelta(minutes=1), get_default_backplane())
+        _channel_layer = ChannelLayer(
+            timedelta(minutes=1), get_default_backplane()
+        )
     return _channel_layer

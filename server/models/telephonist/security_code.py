@@ -3,20 +3,20 @@ from datetime import datetime, timedelta
 from typing import Awaitable
 
 import pymongo
-from beanie import Document
 from pydantic import Field
 
 from server.database import register_model
+from server.models.common import BaseDocument
 
 _rand = random.SystemRandom()
 
 
 def generate_security_code(length: int = 8):
-    return str(_rand.randint(0, 10 ** length - 1)).zfill(length)
+    return str(_rand.randint(0, 10**length - 1)).zfill(length)
 
 
 @register_model
-class OneTimeSecurityCode(Document):
+class OneTimeSecurityCode(BaseDocument):
     DEFAULT_LIFETIME = timedelta(minutes=10)
 
     id: str = Field(default_factory=generate_security_code)
@@ -37,7 +37,7 @@ class OneTimeSecurityCode(Document):
         code = await cls._generate_code()
         code_inst = cls(
             id=code,
-            expires_at=datetime.utcnow() + lifetime,
+            expires_at=datetime.now() + lifetime,
             code_type=code_type,
             ip_address=ip_address,
             created_by=created_by,
@@ -67,10 +67,12 @@ class OneTimeSecurityCode(Document):
         ).exists()
 
     @classmethod
-    def get_valid_code(cls, code_type: str, code: str) -> Awaitable["OneTimeSecurityCode"]:
+    def get_valid_code(
+        cls, code_type: str, code: str
+    ) -> Awaitable["OneTimeSecurityCode"]:
         return cls.find_one(
             {"_id": code, "code_type": code_type},
-            cls.expires_at > datetime.utcnow(),
+            cls.expires_at > datetime.now(),
         )
 
     @classmethod
@@ -79,4 +81,8 @@ class OneTimeSecurityCode(Document):
 
     class Collection:
         name = "onetime_security_codes"
-        indexes = [pymongo.IndexModel("expires_at", name="expires_at_ttl", expireAfterSeconds=60)]
+        indexes = [
+            pymongo.IndexModel(
+                "expires_at", name="expires_at_ttl", expireAfterSeconds=60
+            )
+        ]

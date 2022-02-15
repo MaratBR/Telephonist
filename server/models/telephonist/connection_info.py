@@ -4,16 +4,17 @@ from typing import List, Optional
 from uuid import UUID, uuid4
 
 import pymongo
-from beanie import Document, PydanticObjectId
-from pydantic import BaseModel, Field
+from beanie import PydanticObjectId
+from pydantic import Field
 
 from server.database import register_model
+from server.models.common import AppBaseModel, BaseDocument
 from server.settings import settings
 
 _logger = logging.getLogger("telephonist.database")
 
 
-class StatusEntry(BaseModel):
+class StatusEntry(AppBaseModel):
     progress: Optional[int]
     tasks_total: Optional[int]
     is_intermediate: bool = False
@@ -23,7 +24,7 @@ class StatusEntry(BaseModel):
 
 
 @register_model
-class ConnectionInfo(Document):
+class ConnectionInfo(BaseDocument):
     id: UUID = Field(default_factory=uuid4)
     ip: str
     connected_at: datetime = Field(default_factory=datetime.utcnow)
@@ -46,15 +47,16 @@ class ConnectionInfo(Document):
         hanging_connections = await query.count()
         if hanging_connections > 0:
             _logger.warning(
-                "There's %d hanging connections in the database, this means that either"
-                " there's more than 1 instance of Telephonist running with this database or"
-                " Telephonist exited unexpectedly",
+                "There's %d hanging connections in the database, this means"
+                " that either there's more than 1 instance of Telephonist"
+                " running with this database or Telephonist exited"
+                " unexpectedly",
                 hanging_connections,
             )
             if settings.hanging_connections_policy == "remove":
                 _logger.warning(
-                    'settings.hanging_connections_policy is set to "remove", all hanging'
-                    " connections will be removed"
+                    'settings.hanging_connections_policy is set to "remove",'
+                    " all hanging connections will be removed"
                 )
                 await query.delete()
 
@@ -63,4 +65,8 @@ class ConnectionInfo(Document):
         use_revision = True
 
     class Collection:
-        indexes = [pymongo.IndexModel("expires_at", name="expires_at_ttl", expireAfterSeconds=1)]
+        indexes = [
+            pymongo.IndexModel(
+                "expires_at", name="expires_at_ttl", expireAfterSeconds=1
+            )
+        ]

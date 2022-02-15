@@ -2,11 +2,12 @@ import enum
 from datetime import datetime
 from typing import Any, Optional
 
-from beanie import Document, PydanticObjectId
+from beanie import PydanticObjectId
 from beanie.odm.queries.find import FindMany
 from pydantic import Field
 
 from server.database import register_model
+from server.models.common import BaseDocument
 from server.settings import settings
 
 
@@ -20,7 +21,7 @@ class Severity(enum.IntEnum):
 
 
 @register_model
-class AppLog(Document):
+class AppLog(BaseDocument):
     app_id: PydanticObjectId
     severity: Severity = Severity.UNKNOWN
     body: Any
@@ -31,7 +32,10 @@ class AppLog(Document):
     @staticmethod
     def __motor_create_collection_params__():
         if settings.use_capped_collection_for_logs:
-            return {"capped": True, "size": settings.logs_capped_collection_max_size_mb * 2 ** 20}
+            return {
+                "capped": True,
+                "size": settings.logs_capped_collection_max_size_mb * 2**20,
+            }
 
     @classmethod
     async def _log(

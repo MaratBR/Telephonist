@@ -25,4 +25,6 @@ def test_create_application(client: TestClient):
     resp = client.get("/user-api/applications")
     data = resp.json()
     assert "result" in data and isinstance(data["result"], list)
-    assert len(data["result"]) >= 1 and any(a["_id"] == app_id for a in data["result"])
+    assert len(data["result"]) >= 1 and any(
+        a["_id"] == app_id for a in data["result"]
+    )

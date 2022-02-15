@@ -1,11 +1,12 @@
 from typing import Dict, List, Optional, Type
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
+from server.models.common import AppBaseModel
 from server.models.telephonist import Application
 
 
-class TaskDescriptor(BaseModel):
+class TaskDescriptor(AppBaseModel):
     cmd: Optional[str]
     on_events: List[str]
     cron: Optional[str]
@@ -13,7 +14,7 @@ class TaskDescriptor(BaseModel):
     task_name: str
 
 
-class HostSettings(BaseModel):
+class HostSettings(AppBaseModel):
     tasks: List[TaskDescriptor] = Field(default_factory=list)
 
 
@@ -23,7 +24,9 @@ def get_default_settings_for_type(application_type: str):
         return model_class()
 
 
-def get_application_settings_model(application_type: str) -> Type[BaseModel]:
+def get_application_settings_model(
+    application_type: str,
+) -> Type[AppBaseModel]:
     if application_type == Application.AGENT_TYPE:
         return HostSettings
 

@@ -18,7 +18,8 @@ def _require_user_token(
     if token.check_string:
         if (
             check_string is None
-            or token.check_string != hashlib.sha256(check_string.encode()).hexdigest()
+            or token.check_string
+            != hashlib.sha256(check_string.encode()).hexdigest()
         ):
             raise InvalidToken(
                 "jwt token check string is invalid or check string cookie"
@@ -71,7 +72,9 @@ async def _require_current_user(token: UserTokenModel = AccessToken()) -> User:
     return user
 
 
-async def _current_user(token: UserTokenModel = AccessToken()) -> Optional[User]:
+async def _current_user(
+    token: UserTokenModel = AccessToken(),
+) -> Optional[User]:
     try:
         return await _require_current_user(token)
     except AuthError:

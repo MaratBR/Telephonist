@@ -3,14 +3,19 @@ from datetime import datetime
 from typing import *
 from uuid import UUID
 
-from beanie import Document, Indexed, PydanticObjectId
+from beanie import Indexed, PydanticObjectId
 from beanie.operators import Inc
 from beanie.operators import Set as SetOp
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from server.database import register_model
 from server.internal.auth.utils import static_key_factory
-from server.models.common import IdProjection, SoftDeletes
+from server.models.common import (
+    AppBaseModel,
+    BaseDocument,
+    IdProjection,
+    SoftDeletes,
+)
 
 
 @register_model
@@ -20,12 +25,8 @@ class Application(SoftDeletes):
 
     display_name: str
     name: Indexed(str, unique=True)
-    description: Optional[str] = None
+    description: str = ""
     disabled: bool = False
-    application_type: str = ARBITRARY_TYPE
-    are_settings_allowed: bool = False
-    settings: Optional[Dict[str, Any]]
-    settings_revision: Optional[UUID] = None
     tags: List[str] = Field(default_factory=list)
     access_key: str = Field(default_factory=static_key_factory())
 
@@ -34,14 +35,20 @@ class Application(SoftDeletes):
         return len(self.connection_info) > 0
 
     async def add_subscription(self, event_type: str):
-        if any(sub.event_type == event_type for sub in self.event_subscriptions):
+        if any(
+            sub.event_type == event_type for sub in self.event_subscriptions
+        ):
             return
         self.event_subscriptions.append(event_type)
         await self.save()
 
     async def remove_subscription(self, event_type: str):
         try:
-            sub = next(sub for sub in self.event_subscriptions if sub.event_type == event_type)
+            sub = next(
+                sub
+                for sub in self.event_subscriptions
+                if sub.event_type == event_type
+            )
         except StopIteration:
             return
         self.event_subscriptions.remove(sub)
@@ -71,7 +78,7 @@ class Application(SoftDeletes):
         use_state_management = True
 
 
-class ApplicationView(BaseModel):
+class ApplicationView(AppBaseModel):
     id: PydanticObjectId = Field(alias="_id")
     tags: List[str]
     disabled: bool
@@ -79,14 +86,10 @@ class ApplicationView(BaseModel):
     description: Optional[str]
     access_key: str
     application_type: str
-    are_settings_allowed: bool
+    display_name: str
 
 
-class DetailedApplicationView(ApplicationView):
-    settings: Optional[Dict[str, Any]]
-
-
-class SentEventTrace(Document):
+class SentEventTrace(BaseDocument):
     from_app: Optional[PydanticObjectId]
     to_app: PydanticObjectId
     event_type: str
@@ -107,7 +110,10 @@ class SentEventTrace(Document):
             return cls._add_trace(event_type, to_app, from_app)
         else:
             return asyncio.gather(
-                *(cls._add_trace(event_type, app_id, from_app) for app_id in to_app)
+                *(
+                    cls._add_trace(event_type, app_id, from_app)
+                    for app_id in to_app
+                )
             )
 
     @classmethod
@@ -124,5 +130,7 @@ class SentEventTrace(Document):
         ).upsert(
             SetOp({cls.last_event: datetime.utcnow()}),
             Inc(cls.count),
-            on_insert=cls(event_type=event_type, from_app=from_app, to_app=to_app),
+            on_insert=cls(
+                event_type=event_type, from_app=from_app, to_app=to_app
+            ),
         )

@@ -12,7 +12,9 @@ class TypeRegistry(Generic[TBound], Dict[str, Type[TBound]]):
         return decorator
 
     def set_or_raise(self, key: str, type_: Type[TBound]):
-        assert key not in self, f"{key} is already registered in a {type(self).__name__}"
+        assert (
+            key not in self
+        ), f"{key} is already registered in a {type(self).__name__}"
         self[key] = type_
 
     def require(self, key: str):

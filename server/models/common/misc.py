@@ -1,9 +1,34 @@
-from beanie import PydanticObjectId
-from pydantic import BaseModel, Field, constr
+from datetime import datetime, timezone, tzinfo
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Optional,
+    Type,
+    TypeVar,
+    Union,
+    overload,
+)
+
+from pydantic import Field, constr
+
+__all__ = ("IdProjection", "Identifier", "convert_to_utc")
+
+from server.models.common import AppBaseModel
 
 
-class IdProjection(BaseModel):
-    id: PydanticObjectId = Field(alias="_id")
+class IdProjection(AppBaseModel):
+    id: Any = Field(alias="_id")
 
 
 Identifier = constr(regex=r"^[\d\w%^$#&\-]+$")
+_DT = TypeVar("_DT", bound=datetime)
+
+
+def convert_to_utc(dt: datetime):
+    if dt.tzinfo is not None:
+        if dt.utcoffset().total_seconds() != 0:
+            dt = dt.astimezone(timezone.utc)
+    else:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt

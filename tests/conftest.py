@@ -26,7 +26,8 @@ def mongodb_server():
     data_path = "/tmp/TELEPHONIST" + str(uuid.uuid4())
     Path(data_path).mkdir(parents=True, exist_ok=True)
     proc = subprocess.Popen(
-        ["mongod", "--dbpath", data_path, "--port", str(MONGODB_PORT)], stdout=subprocess.PIPE
+        ["mongod", "--dbpath", data_path, "--port", str(MONGODB_PORT)],
+        stdout=subprocess.PIPE,
     )
     yield proc
     proc.kill()
@@ -43,7 +44,9 @@ def create_test_app():
         tasks = []
         for i in range(10):
             tasks.append(
-                User.create_user(f"TEST{i}", f"TEST{i}", password_reset_required=i % 2 == 0)
+                User.create_user(
+                    f"TEST{i}", f"TEST{i}", password_reset_required=i % 2 == 0
+                )
             )
         await asyncio.gather(*tasks)
 

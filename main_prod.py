@@ -28,8 +28,13 @@ def main():
             ssl_keyfile_password=prod_settings.SSL_PASSWORD,
         )
     uvicorn.run(
-        "server.app:create_app", factory=True, reload=False, port=prod_settings.PORT,
-        log_level=prod_settings.LOG_LEVEL, workers=prod_settings.WORKERS, **args
+        "server.app:create_app",
+        factory=True,
+        reload=False,
+        port=prod_settings.PORT,
+        log_level=prod_settings.LOG_LEVEL,
+        workers=prod_settings.WORKERS,
+        **args
     )
 
 

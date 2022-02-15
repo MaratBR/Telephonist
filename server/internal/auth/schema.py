@@ -4,17 +4,17 @@ from typing import Optional
 from fastapi import Depends, Header
 from fastapi.security import HTTPBasic, HTTPBearer
 from fastapi.security.utils import get_authorization_scheme_param
-from pydantic import BaseModel
 from starlette.responses import JSONResponse
 
 from server.internal.auth.exceptions import InvalidToken
+from server.models.common import AppBaseModel
 from server.settings import settings
 
 JWT_CHECK_HASH_COOKIE = "chk"
 JWT_REFRESH_COOKIE = "jwt.refresh"
 
 
-class HybridLoginData(BaseModel):
+class HybridLoginData(AppBaseModel):
     login: str
     password: str
     hybrid: bool = True
@@ -38,7 +38,9 @@ class TokenResponse(JSONResponse):
                 "refresh_token": None if refresh_as_cookie else refresh_token,
                 "token_type": "bearer",
                 "password_reset_required": password_reset_token is not None,
-                "password_reset_token": password_reset_token if password_reset_token else None,
+                "password_reset_token": password_reset_token
+                if password_reset_token
+                else None,
             }
         )
 
@@ -65,7 +67,9 @@ class TokenResponse(JSONResponse):
 
 
 class BearerSchema(HTTPBearer):
-    async def __call__(self, authorization: Optional[str] = Header(None)) -> Optional[str]:
+    async def __call__(
+        self, authorization: Optional[str] = Header(None)
+    ) -> Optional[str]:
         if authorization is None:
             return None
         scheme, param = get_authorization_scheme_param(authorization)

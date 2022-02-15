@@ -3,13 +3,33 @@ import math
 import time
 import warnings
 from enum import Enum
-from typing import Any, Dict, Generic, List, Optional, Set, Type, TypeVar, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    Set,
+    Type,
+    TypeVar,
+    Union,
+)
 
 from beanie import Document
 from beanie.odm.enums import SortDirection
 from fastapi.params import Depends
-from pydantic import BaseModel, Field
+from pydantic import Field
 from pydantic.generics import GenericModel
+
+__all__ = (
+    "OrderingDirection",
+    "PaginationParameters",
+    "Pagination",
+    "PaginationResult",
+)
+
+from server.models.common import AppBaseModel
 
 
 class OrderingDirection(str, Enum):
@@ -20,7 +40,7 @@ class OrderingDirection(str, Enum):
 TPaginationItem = TypeVar("TPaginationItem")
 
 
-class PaginationParameters(BaseModel):
+class PaginationParameters(AppBaseModel):
     page: int = Field(1, gt=1)
     page_size: int = Field(20, gt=0, lt=100)
     pages_returned: int = Field(1, gt=0, lt=10)
@@ -68,22 +88,33 @@ class Pagination:
     allow_pages_batch: bool = True
     enforce_page_lower_bound: bool = False
 
+    if TYPE_CHECKING:
+        # minimal version of parameters
+        class Parameters(AppBaseModel):
+            page: int
+
     def __init_subclass__(cls, **kwargs):
         if cls.max_pages_per_request < 1:
             warnings.warn(
-                f"{cls.__name__}.max_pages_per_request is less than 1, value will be ignored"
+                f"{cls.__name__}.max_pages_per_request is less than 1, value"
+                " will be ignored"
             )
         if cls.max_page_size < 1:
-            warnings.warn(f"{cls.__name__}.max_page_size is less than 1, value will be ignored")
+            warnings.warn(
+                f"{cls.__name__}.max_page_size is less than 1, value will be"
+                " ignored"
+            )
         if not hasattr(cls, "Parameters"):
 
-            class Parameters(BaseModel):
+            class Parameters(AppBaseModel):
                 if cls.enforce_page_lower_bound:
                     page: int = Field(1, gt=1)
                 else:
                     page: int = 1
                 if cls.allow_pages_batch:
-                    pages_returned: int = Field(1, gt=0, lt=cls.max_pages_per_request)
+                    pages_returned: int = Field(
+                        1, gt=0, lt=cls.max_pages_per_request
+                    )
                 if cls.allow_page_size:
                     page_size: int = Field(
                         cls.default_page_size,
@@ -94,7 +125,9 @@ class Pagination:
                     (
                         __order_by_enum__,
                         __order_by_enum_default__,
-                    ) = _create_order_by_enum(cls.default_order_by, cls.ordered_by_options)
+                    ) = _create_order_by_enum(
+                        cls.default_order_by, cls.ordered_by_options
+                    )
                     order: OrderingDirection = (
                         OrderingDirection.DESC
                         if cls.descending_by_default
@@ -107,10 +140,9 @@ class Pagination:
             assert inspect.isclass(cls.Parameters)
 
         if cls.__init__ is Pagination.__init__:
-            old_init = cls.__init__
 
             def __init__(self, params: cls.Parameters = Depends()):
-                old_init(self, params)
+                Pagination.__init__(self, params)
 
             cls.__init__ = __init__
 
@@ -122,8 +154,10 @@ class Pagination:
     async def paginate(
         self,
         cls: Type[Document],
-        project: Optional[Type[BaseModel]] = None,
-        filter_condition: Optional[Union[Dict[str, Any], List[Dict[str, Any]], List[bool]]] = None,
+        project: Optional[Type[AppBaseModel]] = None,
+        filter_condition: Optional[
+            Union[Dict[str, Any], List[Dict[str, Any]], List[bool]]
+        ] = None,
     ):
         if filter_condition:
             q = (

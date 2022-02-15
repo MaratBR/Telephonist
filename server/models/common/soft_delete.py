@@ -1,28 +1,37 @@
 from datetime import datetime
-from typing import Optional, Type, TypeVar, Union
+from typing import Any, ClassVar, Optional, Type, TypeVar, Union
 
-from beanie import Document, PydanticObjectId
 from beanie.odm.queries.find import FindOne
-from beanie.operators import Eq
+from beanie.operators import NE, Eq
 from pydantic import Field
 
-DocType = TypeVar("DocType", bound=Union["SoftDeletes", Document])
+from .base_model import BaseDocument
+
+__all__ = ("SoftDeletes",)
+
+DocType = TypeVar("DocType", bound=Union["SoftDeletes", BaseDocument])
 
 
-class SoftDeletes(Document):
+class SoftDeletes(BaseDocument):
     deleted_at: Optional[datetime] = Field()
+    NOT_DELETED_COND: ClassVar[Eq] = Eq("deleted_at", None)
+    DELETED_COND: ClassVar[Eq] = NE("deleted_at", None)
 
     @classmethod
     def _not_deleted_condition(cls):
         return cls.deleted_at == None  # noqa
 
     async def soft_delete(self: DocType):
-        await self.update({"deleted_at": datetime.utcnow()})
+        await self.update({"$set": {"deleted_at": datetime.utcnow()}})
 
     @classmethod
     def not_deleted(cls: Type[DocType]):
-        return cls.find(Eq(cls.deleted_at, None))
+        return cls.find(cls.NOT_DELETED_COND)
 
     @classmethod
-    def get_not_deleted(cls: Type[DocType], _id: PydanticObjectId) -> FindOne[DocType]:
+    def deleted(cls: Type[DocType]):
+        return cls.find(cls.DELETED_COND)
+
+    @classmethod
+    def get_not_deleted(cls: Type[DocType], _id: Any) -> FindOne[DocType]:
         return cls.find_one(Eq(cls.deleted_at, None), {"_id": _id})

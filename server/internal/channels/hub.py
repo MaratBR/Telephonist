@@ -6,11 +6,16 @@ from json import JSONDecodeError
 from typing import *
 
 from fastapi import APIRouter
-from pydantic import BaseModel, ValidationError, parse_obj_as
+from pydantic import ValidationError, parse_obj_as
 from pydantic.typing import is_classvar
 from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 
-from server.internal.channels.layer import ChannelLayer, Connection, get_channel_layer
+from server.internal.channels.layer import (
+    ChannelLayer,
+    Connection,
+    get_channel_layer,
+)
+from server.models.common import AppBaseModel
 
 WS_CBV_KEY = "__ws_cbv_class__"
 WS_CBV_CALL_NAME = "__ws_cbv_call__"
@@ -44,10 +49,12 @@ def ws_controller(router: APIRouter, path: str, name: Optional[str] = None):
     return decorator
 
 
-def add_ws_controller(cls: Type["Hub"], router: APIRouter, path: str, name: Optional[str] = None):
+def add_ws_controller(
+    cls: Type["Hub"], router: APIRouter, path: str, name: Optional[str] = None
+):
     _init_ws_cbv(cls)
     caller = getattr(cls, WS_CBV_CALL_NAME)
-    router.add_api_websocket_route(router.prefix + path, caller, name=name)
+    router.add_api_websocket_route(path, caller, name=name)
 
 
 def bind_layer_event(internal_event: str):
@@ -76,11 +83,13 @@ def bind_message(msg_type: Optional[str] = None):
         params = sig.parameters.copy()
         if "self" in params:
             del params["self"]
-        message_params = [p for p in params.values() if p.default is inspect.Parameter.empty]
+        message_params = [
+            p for p in params.values() if p.default is inspect.Parameter.empty
+        ]
         if len(message_params) > 1:
             raise TypeError(
-                "Invalid message handler signature - only one or zero parameters"
-                " without default value allowed"
+                "Invalid message handler signature - only one or zero"
+                " parameters without default value allowed"
             )
         if len(message_params) == 0:
             typehint = None
@@ -96,7 +105,7 @@ def bind_message(msg_type: Optional[str] = None):
     return decorator
 
 
-class HubMessage(BaseModel):
+class HubMessage(AppBaseModel):
     data: Any
     msg_type: str
 
@@ -123,7 +132,8 @@ class Hub:
     def __init_subclass__(cls, **kwargs):
         methods = inspect.getmembers(
             cls,
-            lambda m: inspect.isfunction(m) and hasattr(m, WS_CBV_MESSAGE_HANDLER),
+            lambda m: inspect.isfunction(m)
+            and hasattr(m, WS_CBV_MESSAGE_HANDLER),
         )
         handlers = {}
         for method_name, method in methods:
@@ -134,7 +144,9 @@ class Hub:
         cls._static_handlers = handlers
 
         methods = inspect.getmembers(
-            cls, lambda m: inspect.isfunction(m) and hasattr(m, WS_CBV_INTERNAL_EVENTS)
+            cls,
+            lambda m: inspect.isfunction(m)
+            and hasattr(m, WS_CBV_INTERNAL_EVENTS),
         )
         event_handlers = {}
         for method_name, method in methods:
@@ -142,7 +154,9 @@ class Hub:
             assert isinstance(events, set)
             for event in events:
                 if event in event_handlers:
-                    _logger.warning('overriding event "%s" in %s', event, cls.__name__)
+                    _logger.warning(
+                        'overriding event "%s" in %s', event, cls.__name__
+                    )
                 event_handlers[event] = method_name
         cls._static_internal_event_listeners = event_handlers
 
@@ -164,12 +178,19 @@ class Hub:
             raise InvalidMessageException("invalid message format")
 
         try:
-            assert isinstance(json_obj, dict), "Received message must be a JSON object"
-            assert "msg_type" in json_obj, 'Message object does not contain "msg_type" key'
+            assert isinstance(
+                json_obj, dict
+            ), "Received message must be a JSON object"
+            assert (
+                "msg_type" in json_obj
+            ), 'Message object does not contain "msg_type" key'
             assert isinstance(
                 json_obj["msg_type"], str
             ), 'Raw message\'s "task_type" is not a string'
-            message = {"msg_type": json_obj["msg_type"], "data": json_obj.get("data")}
+            message = {
+                "msg_type": json_obj["msg_type"],
+                "data": json_obj.get("data"),
+            }
             return message
         except AssertionError as exc:
             raise InvalidMessageException(str(exc))
@@ -218,44 +239,19 @@ class Hub:
             return
 
         await self.websocket.accept()
-
-        if len(self._static_internal_event_listeners) != 0:
-            layer_events_listener = asyncio.create_task(self._layer_events_loop())
-        else:
-            layer_events_listener = None
-
-        try:
-            # create new connection and star listening for incoming messages
-            async with self.channel_layer.new_connection() as connection:
-                self._connection = connection
-                try:
-                    await self.on_connected()
-                    await self._main_loop()
-                except Exception as exc:
-                    if not isinstance(exc, WebSocketDisconnect):
-                        await self.on_exception(exc)
-                    await self.on_disconnected(exc)
-        finally:
-            if layer_events_listener:
-                layer_events_listener.cancel()
-
-    async def _layer_events_loop(self):
-        if len(self._static_internal_event_listeners) == 0:
-            return
-        try:
-            async with self.channel_layer.subscribe_to_layer_events(
-                *self._static_internal_event_listeners.keys()
-            ) as sub:
-                async for event_name, data in sub:
-                    method = getattr(self, self._static_internal_event_listeners[event_name])
-                    try:
-                        await _call_method(method, data)
-                    except Exception as exc:
-                        _logger.exception(str(exc))
-        except asyncio.CancelledError:
-            pass
-        except Exception as exc:
-            _logger.exception(str(exc))
+        # create new connection and star listening for incoming messages
+        async with self.channel_layer.new_connection() as connection:
+            self._connection = connection
+            try:
+                await self.on_connected()
+                await self._main_loop()
+            except Exception as exc:
+                if not isinstance(exc, WebSocketDisconnect):
+                    await self.on_exception(exc)
+                await self.on_disconnected(exc)
+                await self.websocket.close(
+                    1000 if isinstance(exc, WebSocketDisconnect) else 1011
+                )
 
     async def _main_loop(self):
         task = asyncio.create_task(self._external_messages_loop())
@@ -270,7 +266,9 @@ class Hub:
                 if message["msg_type"] == "__disconnect__":
                     await self.websocket.close()
                 else:
-                    await self.send_message(message["msg_type"], message["data"])
+                    await self.send_message(
+                        message["msg_type"], message["data"]
+                    )
         except asyncio.CancelledError:
             pass
 
@@ -298,7 +296,9 @@ class Hub:
             message_data = message["data"]
             if handler.typehint is not Any:
                 try:
-                    message_data = parse_obj_as(handler.typehint, message["data"])
+                    message_data = parse_obj_as(
+                        handler.typehint, message["data"]
+                    )
                 except ValidationError as exc:
                     await self.send_error(str(exc), "invalid_data")
                     return
@@ -322,7 +322,9 @@ def _init_ws_cbv(cls: Type["Hub"]):
     # modify __init__
     init: Callable[..., Any] = cls.__init__
     signature = inspect.signature(init)
-    parameters = list(signature.parameters.values())[1:]  # drop `self` parameter
+    parameters = list(signature.parameters.values())[
+        1:
+    ]  # drop `self` parameter
     call_parameters = [
         x
         for x in parameters

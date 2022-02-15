@@ -4,10 +4,10 @@ from uuid import UUID, uuid4
 
 import pymongo
 from beanie import PydanticObjectId, Replace, SaveChanges, before_event
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from server.database import register_model
-from server.models.common import SoftDeletes
+from server.models.common import AppBaseModel, SoftDeletes
 from server.utils.common.type_registry import TypeRegistry
 
 
@@ -27,7 +27,7 @@ TriggersRegistry.INSTANCE = TriggersRegistry()
 TaskTypesRegistry.INSTANCE = TaskTypesRegistry()
 
 
-class TaskTrigger(BaseModel):
+class TaskTrigger(AppBaseModel):
     name: str
     body: Any
 
@@ -50,24 +50,20 @@ class ApplicationTask(SoftDeletes):
     app_id: PydanticObjectId
     name: str
     qualified_name: str
-    __name_before_deleted: Optional[str] = None
-    description: Optional[str]
+    description: str = ""
     tags: List[str] = Field(default_factory=list)
     triggers: List[TaskTrigger] = Field(default_factory=list)
     body: Optional[Any]
-    task_type: str
+    task_type: TaskTypesRegistry.KeyType
     env: Dict[str, str] = Field(default_factory=dict)
     last_updated: datetime = Field(default_factory=datetime.utcnow)
-
-    @before_event([Replace, SaveChanges])
-    def test(self):
-        self.last_updated = datetime.utcnow()
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
     @classmethod
-    def find_task(cls, task_id_or_qname: Union[str, PydanticObjectId]):
+    def find_task(cls, task_id_or_qname: Union[str, UUID]):
         return cls.find_one(
             {"_id": task_id_or_qname}
-            if isinstance(task_id_or_qname, PydanticObjectId)
+            if isinstance(task_id_or_qname, UUID)
             else {"qualified_name": task_id_or_qname}
         )
 
@@ -84,10 +80,8 @@ class ApplicationTask(SoftDeletes):
     async def soft_delete(self):
         if self.deleted_at:
             return
-        if self.__name_before_deleted is None:
-            self.__name_before_deleted = self.name
-        self.qualified_name = self.__name_before_deleted + " (DELETED)"
-        self.name = self.__name_before_deleted + " (DELETED)"
+        self.qualified_name = self.name + " (DELETED)"
+        self.name = self.name + " (DELETED)"
         await super(ApplicationTask, self).soft_delete()
 
     class Collection:

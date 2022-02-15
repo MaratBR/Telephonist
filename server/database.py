@@ -21,15 +21,21 @@ TModelType = TypeVar("TModelType")  # bound=Type[Document]
 
 
 def register_model(model: TModelType) -> TModelType:
-    assert issubclass(model, Document), "model must subclass Document task_type"
+    assert issubclass(
+        model, Document
+    ), "model must subclass Document task_type"
     _models.add(model)
     return model
 
 
-async def init_database(client: Optional[motor.motor_asyncio.AsyncIOMotorClient] = None):
+async def init_database(
+    client: Optional[motor.motor_asyncio.AsyncIOMotorClient] = None,
+):
     global _client
     if client:
-        warnings.warn("Motor client has been explicitly set in init_database function")
+        warnings.warn(
+            "Motor client has been explicitly set in init_database function"
+        )
     _client = client or motor.motor_asyncio.AsyncIOMotorClient(settings.db_url)
     db = _client[settings.mongodb_db_name]
     for model in _models:

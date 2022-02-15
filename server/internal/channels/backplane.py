@@ -21,10 +21,14 @@ _logger = logging.getLogger("telephonist.channels")
 
 
 def _default_encoder(o: Any) -> Any:
+    # we use pydantic's AppBaseModel rather than telephonist's AppBaseModel
+    # here because we want to check for both models and documents
     if isinstance(o, BaseModel):
         model_class = type(o)
         return {
-            "__pydantic__": model_class.__module__ + ":" + model_class.__qualname__,
+            "__pydantic__": model_class.__module__
+            + ":"
+            + model_class.__qualname__,
             "_": o.dict(by_alias=True),
         }
     elif isinstance(o, datetime):
@@ -62,7 +66,10 @@ def _ext_hook(code: int, data: Any):
     elif code == 53:
         ts, offset = struct.unpack("!dI", data)
         return datetime.fromtimestamp(
-            ts, timezone(timedelta(seconds=offset)) if offset != _MAX32INT else None
+            ts,
+            timezone(timedelta(seconds=offset))
+            if offset != _MAX32INT
+            else None,
         )
     elif code == 55:
         return UUID(bytes=data)
@@ -74,7 +81,9 @@ def encode_object(data: Any) -> bytes:
 
 
 def decode_object(string: bytes) -> Any:
-    return msgpack.unpackb(string, ext_hook=_ext_hook, object_hook=_object_hook)
+    return msgpack.unpackb(
+        string, ext_hook=_ext_hook, object_hook=_object_hook
+    )
 
 
 class Subscription:
@@ -165,8 +174,9 @@ class InMemoryBackplane(BackplaneBase):
                     q.put_nowait(data)
                 except asyncio.QueueFull:
                     warnings.warn(
-                        "InMemoryBackplane failed to put a message to the queue: the queue is"
-                        f' full! Channel name is "{channel}"'
+                        "InMemoryBackplane failed to put a message to the"
+                        " queue: the queue is full! Channel name is"
+                        f' "{channel}"'
                     )
 
     async def attach_queue(self, channel: str, queue: asyncio.Queue):
@@ -181,7 +191,11 @@ class InMemoryBackplane(BackplaneBase):
             self._channels[channel].remove(queue)
 
     async def set(self, key: str, value: Any, ttl: Optional[timedelta] = None):
-        self._keys[key] = {"value": value, "ttl": ttl, "expires_at": datetime.now() + ttl}
+        self._keys[key] = {
+            "value": value,
+            "ttl": ttl,
+            "expires_at": datetime.now() + ttl,
+        }
 
     async def get(self, key: str) -> Any:
         entry = self._keys.get(key)
@@ -210,7 +224,10 @@ class RedisBackplane(BackplaneBase):
             return None
         try:
             value = decode_object(value)
-            if value["ttl"] and value["created_at"] + value["ttl"] < time.time():
+            if (
+                value["ttl"]
+                and value["created_at"] + value["ttl"] < time.time()
+            ):
                 value = None
         except:
             return None
@@ -254,7 +271,9 @@ class RedisBackplane(BackplaneBase):
             _logger.exception(str(exc))
         _logger.debug("Receiver loop has completed execution")
 
-    async def attach_queue(self, channel: str, queue: asyncio.Queue) -> Unsubscribe:
+    async def attach_queue(
+        self, channel: str, queue: asyncio.Queue
+    ) -> Unsubscribe:
         listeners = self._listeners.get(channel)
         if listeners:
             listeners.append(queue)
@@ -313,7 +332,8 @@ T = TypeVar("T")
 
 @asynccontextmanager
 async def mapped_subscription(
-    manager: AsyncContextManager[AsyncIterable[T]], map_function: Callable[[T], T]
+    manager: AsyncContextManager[AsyncIterable[T]],
+    map_function: Callable[[T], T],
 ) -> AsyncContextManager[AsyncIterable[Tuple[str, Any]]]:
     async with manager as iterable:
 

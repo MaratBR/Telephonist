@@ -17,6 +17,7 @@ python-jose = {extras = ["cryptography"], version = "*"}
 bcrypt = "*"
 msgpack = "*"
 pydantic = {extras = ["dotenv"], version = "*"}
+arrow = "*"
 
 [dev-packages]
 pytest = "*"
@@ -25,6 +26,8 @@ isort = "*"
 flake8 = "*"
 pytest-asyncio = "*"
 pre-commit = "*"
+requests = "*"
+autoflake = "*"
 
 [requires]
 python_version = "3.9"

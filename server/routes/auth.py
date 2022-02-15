@@ -4,7 +4,6 @@ from typing import Optional
 
 import fastapi
 from fastapi import Body, Cookie, Header, HTTPException
-from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
 from starlette import status
 from starlette.requests import Request
@@ -18,6 +17,7 @@ from server.internal.auth.schema import (
 )
 from server.internal.auth.token import JWT, PasswordResetToken, UserTokenModel
 from server.models.auth import AuthLog, RefreshToken, User, UserView
+from server.models.common import AppBaseModel
 from server.settings import settings
 
 auth_api_router = fastapi.routing.APIRouter(tags=["auth"], prefix="/auth")
@@ -28,15 +28,22 @@ async def get_user(user: User = CurrentUser(required=True)):
     return user
 
 
-class NewUserInfo(BaseModel):
+class NewUserInfo(AppBaseModel):
     username: str
     password: str
 
 
 @auth_api_router.post("/register")
-async def register_new_user(info: NewUserInfo, host: Optional[str] = Header(None)):
-    if settings.user_registration_unix_socket_only and host != settings.unix_socket_name:
-        raise HTTPException(403, "User registration is only allowed through unix socket")
+async def register_new_user(
+    info: NewUserInfo, host: Optional[str] = Header(None)
+):
+    if (
+        settings.user_registration_unix_socket_only
+        and host != settings.unix_socket_name
+    ):
+        raise HTTPException(
+            403, "User registration is only allowed through unix socket"
+        )
     try:
         await User.create_user(info.username, info.password)
     except DuplicateKeyError:
@@ -44,18 +51,22 @@ async def register_new_user(info: NewUserInfo, host: Optional[str] = Header(None
     return {"detail": "New user registered successfully"}
 
 
-class NewPassword(BaseModel):
+class NewPassword(AppBaseModel):
     password: str
 
 
 @auth_api_router.post("/token")
 async def login_user(credentials: HybridLoginData, request: Request):
-    user = await User.find_user_by_credentials(credentials.login, credentials.password)
+    user = await User.find_user_by_credentials(
+        credentials.login, credentials.password
+    )
     if user is not None:
         if user.password_reset_required:
             exp = datetime.now() + timedelta(minutes=10)
             password_token = PasswordResetToken(sub=user.id, exp=exp).encode()
-            response = TokenResponse(None, None, password_reset_token=password_token, token_exp=exp)
+            response = TokenResponse(
+                None, None, password_reset_token=password_token, token_exp=exp
+            )
             await AuthLog.log(
                 "password-reset-login",
                 user.id,
@@ -66,24 +77,31 @@ async def login_user(credentials: HybridLoginData, request: Request):
             db_token, refresh_token = await RefreshToken.create_token(
                 user, settings.refresh_token_lifetime
             )
-            check_string = secrets.token_urlsafe(10) if credentials.hybrid else None
+            check_string = (
+                secrets.token_urlsafe(10) if credentials.hybrid else None
+            )
             ttl = timedelta(hours=12)
             response = TokenResponse(
                 user.create_token(ttl, check_string=check_string).encode(),
                 refresh_token,
-                refresh_cookie_path=request.scope["router"].url_path_for("refresh"),
+                refresh_cookie_path=request.scope["router"].url_path_for(
+                    "refresh"
+                ),
                 refresh_as_cookie=credentials.hybrid,
                 check_string=check_string,
                 token_exp=datetime.now() + ttl,
             )
             await AuthLog.log(
-                "hybrid-login", user.id, request.headers.get("user-agent"), request.client.host
+                "hybrid-login",
+                user.id,
+                request.headers.get("user-agent"),
+                request.client.host,
             )
         return response
     raise HTTPException(401, "User with given credentials not found")
 
 
-class RefreshRequest(BaseModel):
+class RefreshRequest(AppBaseModel):
     refresh_token: str
 
 
@@ -112,7 +130,11 @@ async def refresh(
 
     if settings.rotate_refresh_token:
         await token.delete()
-        refresh_token = (await RefreshToken.create_token(user, settings.refresh_token_lifetime))[1]
+        refresh_token = (
+            await RefreshToken.create_token(
+                user, settings.refresh_token_lifetime
+            )
+        )[1]
 
     await AuthLog.log(
         "hybrid-refresh" if refresh_as_cookie else "refresh",
@@ -131,17 +153,23 @@ async def refresh(
 
 
 @auth_api_router.post("/logout")
-async def logout(request: Request, refresh_token: str = Cookie(..., alias=JWT_REFRESH_COOKIE)):
+async def logout(
+    request: Request,
+    refresh_token: str = Cookie(..., alias=JWT_REFRESH_COOKIE),
+):
     if refresh_token:
         token = await RefreshToken.find_valid(refresh_token)
         await token.delete()
         await AuthLog.log(
-            "explicit-logout", token.user_id, request.headers.get("user-agent"), request
+            "explicit-logout",
+            token.user_id,
+            request.headers.get("user-agent"),
+            request,
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-class RevokeRefreshToken(BaseModel):
+class RevokeRefreshToken(AppBaseModel):
     token: str
 
 
@@ -155,12 +183,15 @@ async def revoke_refresh_token(
     if token:
         await token.delete()
         await AuthLog.log(
-            "revoke-refresh-token", token.user_id, request.headers.get("user-agent"), request
+            "revoke-refresh-token",
+            token.user_id,
+            request.headers.get("user-agent"),
+            request,
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-class ResetPassword(BaseModel):
+class ResetPassword(AppBaseModel):
     password_reset_token: JWT[PasswordResetToken]
     new_password: str
 
@@ -169,8 +200,12 @@ class ResetPassword(BaseModel):
 async def reset_password(body: ResetPassword, request: Request):
     user = await User.get(body.password_reset_token.model.sub)
     if not user.password_reset_required:
-        raise HTTPException(status.HTTP_409_CONFLICT, "password already has been reset")
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "password already has been reset"
+        )
     user.set_password(body.new_password)
     await user.replace()
-    await AuthLog.log("password-reset", user.id, request.headers.get("user-agent"), request)
+    await AuthLog.log(
+        "password-reset", user.id, request.headers.get("user-agent"), request
+    )
     return {"detail": "Password reset"}

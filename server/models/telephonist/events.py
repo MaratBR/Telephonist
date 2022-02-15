@@ -2,14 +2,15 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
 
-from beanie import Document, PydanticObjectId
+from beanie import PydanticObjectId
 from pydantic import Field
 
 from server.database import register_model
+from server.models.common import BaseDocument
 
 
 @register_model
-class Event(Document):
+class Event(BaseDocument):
     app_id: PydanticObjectId
     task_name: Optional[str]
     task_id: Optional[UUID]
