@@ -11,7 +11,7 @@ from server.internal.channels import WSTicket, WSTicketModel
 from server.internal.channels.hub import Hub, bind_message, ws_controller
 from server.internal.telephonist import CG
 from server.models.auth import User
-from server.models.common import AppBaseModel, Identifier, IdProjection
+from server.models.common import IdProjection
 from server.models.telephonist import Application
 
 ws_router = APIRouter(prefix="/ws")

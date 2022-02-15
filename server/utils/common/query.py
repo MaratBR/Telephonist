@@ -1,4 +1,4 @@
-from typing import *
+from typing import Type, TypeVar
 
 from fastapi import Depends, HTTPException
 from pydantic import ValidationError

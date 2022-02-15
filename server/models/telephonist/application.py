@@ -1,7 +1,6 @@
 import asyncio
 from datetime import datetime
-from typing import *
-from uuid import UUID
+from typing import ClassVar, Iterable, List, Optional, Union
 
 from beanie import Indexed, PydanticObjectId
 from beanie.operators import Inc

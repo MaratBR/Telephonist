@@ -3,7 +3,6 @@ from typing import Optional
 
 from beanie import PydanticObjectId
 from fastapi import APIRouter, Depends
-from pydantic import Field
 
 from server.internal.telephonist import Errors
 from server.models.common import AppBaseModel, Pagination

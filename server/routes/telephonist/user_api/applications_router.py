@@ -1,10 +1,11 @@
 from datetime import datetime, timedelta
-from typing import *
+from typing import Optional, Union
 from uuid import UUID
 
 import fastapi
 from beanie import PydanticObjectId
 from fastapi import Body, Depends, HTTPException, Query, params
+from starlette.requests import Request
 
 import server.internal.telephonist.application as _internal
 from server.internal.auth.dependencies import AccessToken
@@ -140,8 +141,8 @@ class CRRequest(AppBaseModel):
 
 
 @applications_router.post("/cr/start")
-async def request_code_registration(body: CRRequest = Body(...)):
-    code = await OneTimeSecurityCode.new("new_app_code", body.client_name)
+async def request_code_registration(request: Request, body: CRRequest = Body(...)):
+    code = await OneTimeSecurityCode.new("new_app_code", body.client_name, ip_address=request.client.host)
     return {
         "code": code.id,
         "expires_at": code.expires_at,

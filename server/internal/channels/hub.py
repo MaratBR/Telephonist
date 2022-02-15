@@ -21,8 +21,8 @@ WS_CBV_KEY = "__ws_cbv_class__"
 WS_CBV_CALL_NAME = "__ws_cbv_call__"
 WS_CBV_MESSAGE_HANDLER = "__ws_cbv_message__"
 WS_CBV_INTERNAL_EVENTS = "__ws_cbv_internal_events__"
-HubHandlerMeta = namedtuple("HubHandlerMeta", ("msg_type", "typehint"))
-HubHandlerCache = namedtuple("HubHandlerCache", ("method_name", "typehint"))
+HubHandlerMeta = NamedTuple("HubHandlerMeta", (("msg_type", str), ("typehint", type)))
+HubHandlerCache = NamedTuple("HubHandlerCache", (("msg_type", str), ("typehint", type)))
 _logger = logging.getLogger("telephonist.channels")
 
 

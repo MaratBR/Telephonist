@@ -70,7 +70,7 @@ def _create_order_by_enum(default_option: str, options: Set[str]):
         return _order_by_types_cache[typename], getattr(
             _order_by_types_cache[typename], default_option
         )
-    enum_class = Enum(typename, {v: v for v in options})
+    enum_class = Enum(typename, {v: v for v in options})  # type: ignore
     _order_by_types_cache[typename] = enum_class
     return enum_class, getattr(enum_class, default_option)
 

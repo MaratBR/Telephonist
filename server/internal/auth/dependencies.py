@@ -1,5 +1,5 @@
 import hashlib
-from typing import *
+from typing import Optional, Type, Union
 
 from fastapi import Cookie, Depends, params
 

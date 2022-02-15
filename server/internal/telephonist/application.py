@@ -7,13 +7,7 @@ from uuid import UUID, uuid4
 from beanie import PydanticObjectId
 from beanie.operators import In
 from fastapi import HTTPException
-from pydantic import (
-    Field,
-    ValidationError,
-    parse_obj_as,
-    root_validator,
-    validator,
-)
+from pydantic import Field, ValidationError, parse_obj_as, validator
 from starlette import status
 
 from server.internal.channels import get_channel_layer
@@ -30,15 +24,11 @@ from server.models.telephonist import (
     ConnectionInfo,
     EventSequence,
 )
-from server.models.telephonist.application_settings import (
-    get_default_settings_for_type,
-)
 from server.models.telephonist.application_task import (
     ApplicationTask,
     TaskTrigger,
     TaskTypesRegistry,
 )
-from server.settings import settings
 
 
 class CreateApplication(AppBaseModel):

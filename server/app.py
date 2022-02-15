@@ -14,7 +14,12 @@ from server.internal.channels import (
     stop_backplane,
 )
 from server.internal.channels.backplane import BackplaneBase, RedisBackplane
-from server.routes import *
+from server.routes import (
+    application_api_router,
+    auth_api_router,
+    user_api_router,
+    ws_root_router,
+)
 from server.settings import settings
 
 

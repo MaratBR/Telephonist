@@ -1,7 +1,7 @@
 import base64
 import hashlib
 from datetime import datetime, timedelta
-from typing import *
+from typing import Optional, Tuple, Union
 
 from beanie import Document, PydanticObjectId
 from beanie.operators import Eq

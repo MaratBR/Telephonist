@@ -1,4 +1,4 @@
-from typing import Any, Callable, ClassVar, Optional, Type, TypeVar, Union
+from typing import Any, Optional, Type, TypeVar
 
 from beanie import Document, PydanticObjectId
 from fastapi import HTTPException

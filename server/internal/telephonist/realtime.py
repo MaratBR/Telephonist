@@ -1,4 +1,4 @@
-from typing import *
+from typing import Any, Dict, List, Union
 from uuid import UUID
 
 from beanie import PydanticObjectId
