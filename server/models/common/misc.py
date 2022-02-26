@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
-from typing import Any, TypeVar
+from typing import TypeVar, Union
+from uuid import UUID
 
+from beanie import PydanticObjectId
 from pydantic import Field, constr
 
 __all__ = ("IdProjection", "Identifier", "convert_to_utc")
@@ -9,7 +11,7 @@ from server.models.common import AppBaseModel
 
 
 class IdProjection(AppBaseModel):
-    id: Any = Field(alias="_id")
+    id: Union[PydanticObjectId, UUID, str, int] = Field(alias="_id")
 
 
 Identifier = constr(regex=r"^[\d\w%^$#&\-]+$")

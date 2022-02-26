@@ -1,8 +1,6 @@
 from datetime import datetime, timedelta
-from typing import List, Optional, Set
+from typing import List, Set, Union
 
-from beanie import PydanticObjectId
-from beanie.operators import In
 from fastapi import APIRouter
 
 from server import VERSION
@@ -11,8 +9,6 @@ from server.internal.channels import WSTicket, WSTicketModel
 from server.internal.channels.hub import Hub, bind_message, ws_controller
 from server.internal.telephonist import CG
 from server.models.auth import User
-from server.models.common import IdProjection
-from server.models.telephonist import Application
 
 ws_router = APIRouter(prefix="/ws")
 
@@ -32,8 +28,7 @@ class UserHub(Hub):
 
     def __init__(self):
         super().__init__()
-        self._subscribed_application: Optional[PydanticObjectId] = None
-        self._application_events: Set[PydanticObjectId] = set()
+        self._topics: Set[str] = set()
 
     async def on_connected(self):
         await self.connection.add_to_group(CG.auth.user(self.ticket.sub))
@@ -41,53 +36,38 @@ class UserHub(Hub):
             "introduction", {"server_version": VERSION, "authentication": "ok"}
         )
 
-    @bind_message("unsub_from_app_events")
-    async def unsubscribe_from_application_events(
-        self, app_ids: List[PydanticObjectId]
-    ):
-        for app_id in app_ids:
-            await self.connection.remove_from_group(
-                CG.application_events(app_id)
-            )
-        self._application_events = self._application_events.difference(app_ids)
+    @bind_message("sub")
+    async def subscribe_to_topic(self, topic: Union[List[str], str]):
+        if isinstance(topic, str):
+            topic = [topic]
+        for t in topic:
+            if t in self._topics or t.strip() == "":
+                continue
+            self._topics.add(t)
+            await self.connection.add_to_group(CG.monitoring(t))
         await self._sync()
 
-    @bind_message("sub_to_app_events")
-    async def subscribe_from_application_events(
-        self, app_ids: List[PydanticObjectId]
-    ):
-        applications = {
-            a.id
-            for a in await Application.find(In("_id", app_ids))
-            .project(IdProjection)
-            .to_list()
-        }
-        new_applications = applications.difference(self._application_events)
-        for app_id in new_applications:
-            await self.connection.add_to_group(CG.application_events(app_id))
-        self._application_events = self._application_events.union(
-            new_applications
-        )
+    @bind_message("unsub")
+    async def unsubscribe_from_topic(self, topic: Union[List[str], str]):
+        if isinstance(topic, str):
+            topic = [topic]
+        for t in topic:
+            if t not in self._topics or t.strip() == "":
+                continue
+            self._topics.remove(t)
+            await self.connection.remove_from_group(CG)
         await self._sync()
 
-    @bind_message("set_application_subscription")
-    async def set_application_subscription(
-        self, app_id: Optional[PydanticObjectId]
-    ):
-        if self._subscribed_application == app_id:
-            return
-        if self._subscribed_application:
-            await self.connection.remove_from_group(
-                CG.monitoring.app(self._subscribed_application)
-            )
-        if app_id:
-            await self.connection.add_to_group(CG.monitoring.app(app_id))
-        self._subscribed_application = app_id
+    @bind_message("unsuball")
+    async def unsub_from_all_topics(self):
+        for t in self._topics:
+            await self.connection.remove_from_group(CG.monitoring(t))
 
+    @bind_message("sync")
     async def _sync(self):
         await self.send_message(
             "sync",
             {
-                "application_events": list(self._application_events),
+                "topics": list(self._topics),
             },
         )

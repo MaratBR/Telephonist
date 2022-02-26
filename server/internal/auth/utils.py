@@ -1,4 +1,5 @@
 import secrets
+import string
 from functools import partial
 from typing import *
 
@@ -53,7 +54,13 @@ def encode_token_raw(data: dict):
     )
 
 
-create_static_key = secrets.token_urlsafe
+_STATIC_KEY_ABC = (
+    string.digits + string.ascii_uppercase + string.ascii_lowercase
+)
+
+
+def create_static_key(length: int):
+    return "".join(secrets.choice(_STATIC_KEY_ABC) for i in range(length))
 
 
 def static_key_factory(length: int = 42):

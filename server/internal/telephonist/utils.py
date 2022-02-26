@@ -31,21 +31,27 @@ class Prefixer:
         else:
             self._prefix = "/" + prefix + "/"
 
-    def _g(self, *parts: Any):
+    def __call__(self, *parts: Any):
         return self._prefix + "/".join(map(str, parts))
 
 
 class MonitoringEvents(Prefixer):
     def app(self, app_id: PydanticObjectId):
-        return self._g("monitoring", "app", app_id)
+        return self("app", app_id)
 
     def app_events(self, app_id: PydanticObjectId):
-        return self._g("appEvents", app_id)
+        return self("appEvents", app_id)
+
+    def sequence(self, sequence_id: PydanticObjectId):
+        return self("sequence", sequence_id)
+
+    def sequence_events(self, sequence_id: PydanticObjectId):
+        return self("sequenceEvents", sequence_id)
 
 
 class AuthEvents(Prefixer):
     def user(self, user_id: PydanticObjectId):
-        return self._g("user", user_id)
+        return self("user", user_id)
 
 
 class ChannelGroups(Prefixer):
@@ -55,10 +61,10 @@ class ChannelGroups(Prefixer):
         self.auth = AuthEvents("auth")
 
     def app(self, app_id: PydanticObjectId):
-        return self._g("app", app_id)
+        return self("app", app_id)
 
     def event(self, event_key: str):
-        return self._g("events", "key", event_key)
+        return self("events", "key", event_key)
 
 
 CG = ChannelGroups()

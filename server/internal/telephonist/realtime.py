@@ -32,11 +32,8 @@ async def notify_events(*events: Event):
     for event in events:
         await get_channel_layer().groups_send(
             [
-                CG.application_events(event.app_id),
-                CG.events(
-                    event_type=event.event_type,
-                    task_name=event.task_name or "_",
-                ),
+                CG.monitoring.app_events(event.app_id),
+                CG.event(event.event_key),
             ],
             "new_event",
             event,

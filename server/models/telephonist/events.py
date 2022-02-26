@@ -3,10 +3,10 @@ from typing import Any, Optional
 from uuid import UUID
 
 from beanie import PydanticObjectId
-from pydantic import Field
+from pydantic import Field, validator
 
 from server.database import register_model
-from server.models.common import BaseDocument
+from server.models.common import BaseDocument, convert_to_utc
 
 
 @register_model
@@ -20,6 +20,10 @@ class Event(BaseDocument):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     data: Optional[Any] = None
     publisher_ip: Optional[str]
+
+    _created_at_validator = validator("created_at", allow_reuse=True)(
+        convert_to_utc
+    )
 
     class Collection:
         name = "events"

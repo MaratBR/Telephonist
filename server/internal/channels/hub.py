@@ -1,7 +1,6 @@
 import asyncio
 import inspect
 import logging
-from collections import namedtuple
 from json import JSONDecodeError
 from typing import *
 
@@ -21,8 +20,12 @@ WS_CBV_KEY = "__ws_cbv_class__"
 WS_CBV_CALL_NAME = "__ws_cbv_call__"
 WS_CBV_MESSAGE_HANDLER = "__ws_cbv_message__"
 WS_CBV_INTERNAL_EVENTS = "__ws_cbv_internal_events__"
-HubHandlerMeta = NamedTuple("HubHandlerMeta", (("msg_type", str), ("typehint", type)))
-HubHandlerCache = NamedTuple("HubHandlerCache", (("msg_type", str), ("typehint", type)))
+HubHandlerMeta = NamedTuple(
+    "HubHandlerMeta", (("msg_type", str), ("typehint", type))
+)
+HubHandlerCache = NamedTuple(
+    "HubHandlerCache", (("method_name", str), ("typehint", type))
+)
 _logger = logging.getLogger("telephonist.channels")
 
 
@@ -165,7 +168,7 @@ class Hub:
         Метод, вызываемый при возникновении неожиданного исключения.
         :param exception:
         """
-        # await self.send_error(exception, kind="internal")
+        await self.send_error(exception, kind="internal")
         _logger.exception(str(exception))
 
     async def read_message(self) -> dict:
@@ -248,10 +251,10 @@ class Hub:
             except Exception as exc:
                 if not isinstance(exc, WebSocketDisconnect):
                     await self.on_exception(exc)
+                    await self.websocket.close(
+                        1000 if isinstance(exc, WebSocketDisconnect) else 1011
+                    )
                 await self.on_disconnected(exc)
-                await self.websocket.close(
-                    1000 if isinstance(exc, WebSocketDisconnect) else 1011
-                )
 
     async def _main_loop(self):
         task = asyncio.create_task(self._external_messages_loop())

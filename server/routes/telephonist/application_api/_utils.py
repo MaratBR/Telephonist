@@ -1,7 +1,6 @@
-from http.client import HTTPException
 from typing import Union
 
-from fastapi import Depends, params
+from fastapi import Depends, HTTPException, params
 
 from server.internal.auth.schema import require_bearer
 from server.models.telephonist import Application

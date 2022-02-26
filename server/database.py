@@ -1,4 +1,5 @@
 import inspect
+import logging
 import warnings
 from typing import Optional, TypeVar
 
@@ -10,6 +11,7 @@ from server.settings import settings
 
 _models = set()
 _client: Optional[motor.motor_asyncio.AsyncIOMotorClient] = None
+_logger = logging.getLogger("telephonist.database")
 
 
 def motor_client():
@@ -28,9 +30,16 @@ def register_model(model: TModelType) -> TModelType:
     return model
 
 
+is_available = False
+
+
 async def init_database(
     client: Optional[motor.motor_asyncio.AsyncIOMotorClient] = None,
 ):
+    _logger.info(
+        "initializing database... (settings.mongodb_db_name=%s)",
+        settings.mongodb_db_name,
+    )
     global _client
     if client:
         warnings.warn(
@@ -38,6 +47,9 @@ async def init_database(
         )
     _client = client or motor.motor_asyncio.AsyncIOMotorClient(settings.db_url)
     db = _client[settings.mongodb_db_name]
+    _logger.debug(
+        f'initializing models: {", ".join(m.__name__ for m in _models)} ...'
+    )
     for model in _models:
         if hasattr(model, "__motor_create_collection_params__"):
             params = getattr(model, "__motor_create_collection_params__")()

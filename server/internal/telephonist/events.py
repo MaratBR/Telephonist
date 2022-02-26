@@ -1,12 +1,13 @@
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Set, Union
 from uuid import UUID
 
 from beanie import PydanticObjectId
 from fastapi import HTTPException
 
-from server.internal.telephonist import realtime
+from server.internal.channels import get_channel_layer
+from server.internal.telephonist import CG, realtime
 from server.models.common import AppBaseModel, Identifier
 from server.models.telephonist import (
     ApplicationTask,
@@ -16,6 +17,9 @@ from server.models.telephonist import (
 )
 
 _logger = logging.getLogger("telephonist.api.events")
+
+MSG_SEQUENCE = "sequence"
+MSG_NEW_EVENT = "new_event"
 
 
 class EventDescriptor(AppBaseModel):
@@ -27,11 +31,6 @@ class EventDescriptor(AppBaseModel):
 async def make_and_validate_event(
     app_id: PydanticObjectId, descriptor: EventDescriptor, ip_address: str
 ):
-    if realtime.is_reserved_event(descriptor.name):
-        raise HTTPException(
-            422, f"event type '{descriptor.name}' is reserved for internal use"
-        )
-
     if descriptor.sequence_id:
         seq = await EventSequence.get(descriptor.sequence_id)
         if seq is None or seq.app_id != app_id:
@@ -61,13 +60,31 @@ async def make_and_validate_event(
     )
 
 
+async def notify_events(*events: Event):
+    for event in events:
+        groups = [
+            CG.monitoring.app_events(event.app_id),
+            CG.event(event.event_key),
+        ]
+        if event.sequence_id:
+            groups.append(CG.monitoring.sequence_events(event.sequence_id))
+        await get_channel_layer().groups_send(
+            groups,
+            "new_event",
+            event,
+        )
+
+
 async def publish_events(*events: Event):
     if len(events) == 0:
         return
+    events = list(events)
     _logger.debug(f"publishing events: {events}")
     try:
-        await Event.insert_many(list(events))
-        await realtime.notify_events(*events)
+        result = await Event.insert_many(events)
+        for i in range(len(events)):
+            events[i].id = result.inserted_ids[i]
+        await notify_events(*events)
     except Exception as exc:
         _logger.exception(
             f"failed to publish {len(events)} events: {str(exc)}"
@@ -81,9 +98,7 @@ async def apply_sequence_updates_on_event(event: Event):
     if seq.frozen:
         seq.frozen = False
         await seq.save_changes()
-        await realtime.on_sequences_updated(
-            seq.app_id, [seq.id], {"frozen": False}
-        )
+        await notify_sequence(seq)
 
 
 class SequenceDescriptor(AppBaseModel):
@@ -111,7 +126,7 @@ async def get_sequence(
 
 
 async def create_sequence(
-    app_id: PydanticObjectId, descriptor: SequenceDescriptor
+    app_id: PydanticObjectId, descriptor: SequenceDescriptor, ip_address: str
 ):
     if descriptor.task_id:
         task = await ApplicationTask.find_task(descriptor.task_id)
@@ -149,6 +164,21 @@ async def create_sequence(
         task_id=descriptor.task_id,
     )
     await sequence.insert()
+
+    # create and publish "start" event
+    await publish_events(
+        Event(
+            sequence_id=sequence.id,
+            task_name=sequence.task_name,
+            event_type=realtime.START_EVENT,
+            event_key=f"{realtime.START_EVENT}@{sequence.task_name}"
+            if sequence.task_name
+            else realtime.START_EVENT,
+            publisher_ip=ip_address,
+            app_id=sequence.app_id,
+        )
+    )
+    await notify_sequence(sequence)
     return sequence
 
 
@@ -203,7 +233,7 @@ async def finish_sequence(
 
     # publish events and send updates to the clients
     await publish_events(*events)
-    await realtime.on_sequence_updated(sequence)
+    await notify_sequence(sequence)
 
 
 async def set_sequence_meta(
@@ -214,4 +244,14 @@ async def set_sequence_meta(
     else:
         sequence.meta.update(new_meta)
     await sequence.save_changes()
-    await realtime.on_sequence_meta_updated(sequence, new_meta)
+    await notify_sequence(sequence, {"meta"})
+
+
+async def notify_sequence(
+    sequence: EventSequence, include: Optional[Set[str]] = None
+):
+    await get_channel_layer().group_send(
+        CG.monitoring.app(sequence.app_id),
+        MSG_SEQUENCE,
+        sequence.dict(by_alias=True, include=include),
+    )

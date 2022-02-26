@@ -46,12 +46,14 @@ TriggersRegistry.INSTANCE.update(cron=str, events=str, fsnotify=str)
 
 @register_model
 class ApplicationTask(SoftDeletes):
-    id: UUID = Field(default_factory=uuid4)
+    id: UUID = Field(default_factory=uuid4, alias="_id")
     app_id: PydanticObjectId
+    app_name: str
     name: str
     qualified_name: str
     description: str = ""
     tags: List[str] = Field(default_factory=list)
+    display_name: Optional[str] = None
     triggers: List[TaskTrigger] = Field(default_factory=list)
     body: Optional[Any]
     task_type: TaskTypesRegistry.KeyType
@@ -86,7 +88,17 @@ class ApplicationTask(SoftDeletes):
 
     class Collection:
         name = "application_tasks"
-        indexes = [pymongo.IndexModel("qualified_name", unique=True), "app_id"]
+        indexes = [
+            pymongo.IndexModel("qualified_name", unique=True),
+            "app_id",
+            [
+                ("name", pymongo.TEXT),
+                ("qualified_name", pymongo.TEXT),
+                ("description", pymongo.TEXT),
+                ("tags", pymongo.TEXT),
+                ("env", pymongo.TEXT),
+            ],
+        ]
 
     class Settings:
         use_state_management = True

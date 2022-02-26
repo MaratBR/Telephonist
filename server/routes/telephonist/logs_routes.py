@@ -10,12 +10,7 @@ from server.internal.auth.dependencies import AccessToken
 from server.internal.channels import WSTicket, WSTicketModel
 from server.internal.channels.hub import Hub, bind_message, ws_controller
 from server.models.common import AppBaseModel
-from server.models.telephonist import (
-    Application,
-    AppLog,
-    EventSequence,
-    Severity,
-)
+from server.models.telephonist import Application, AppLog, EventSequence, Severity
 from server.routes.telephonist.utils import get_application_from_key
 from server.utils.common import QueryDict
 
@@ -84,6 +79,9 @@ async def create_log_entry(
     )
     await log.insert()
     return {"detail": "Log accepted"}
+
+
+@logs_router.post("/add/im")
 
 
 LogMessage = LogBody

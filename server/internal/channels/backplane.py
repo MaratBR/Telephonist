@@ -14,6 +14,7 @@ from uuid import UUID
 import msgpack
 from aioredis import Redis
 from beanie import PydanticObjectId
+from bson import ObjectId
 from pydantic import BaseModel
 
 _MAX32INT = 4294967295
@@ -21,7 +22,7 @@ _logger = logging.getLogger("telephonist.channels")
 
 
 def _default_encoder(o: Any) -> Any:
-    # we use pydantic's AppBaseModel rather than telephonist's AppBaseModel
+    # we use pydantic's BaseModel rather than telephonist's AppBaseModel
     # here because we want to check for both models and documents
     if isinstance(o, BaseModel):
         model_class = type(o)
@@ -37,7 +38,7 @@ def _default_encoder(o: Any) -> Any:
         else:
             offset = _MAX32INT
         return msgpack.ExtType(53, struct.pack("!dI", o.timestamp(), offset))
-    elif isinstance(o, PydanticObjectId):
+    elif isinstance(o, ObjectId):
         return msgpack.ExtType(54, o.binary)
     elif isinstance(o, UUID):
         return msgpack.ExtType(55, o.bytes)
@@ -312,14 +313,17 @@ _backplane: Optional[BackplaneBase] = None
 async def start_backplane(backplane: BackplaneBase):
     global _backplane
     assert _backplane is None, "You can't initialize backplane twice"
+    _logger.debug("starting backplane")
     _backplane = backplane
     await _backplane.start()
 
 
 async def stop_backplane():
     global _backplane
-    await _backplane.stop()  # noqa
-    _backplane = None
+    _logger.debug("stopping backplane")
+    if _backplane:
+        await _backplane.stop()  # noqa
+        _backplane = None
 
 
 def get_default_backplane():

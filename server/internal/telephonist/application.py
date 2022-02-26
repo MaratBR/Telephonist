@@ -1,7 +1,7 @@
 import hashlib
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from uuid import UUID, uuid4
 
 from beanie import PydanticObjectId
@@ -24,7 +24,7 @@ from server.models.telephonist import (
     ConnectionInfo,
     EventSequence,
 )
-from server.models.telephonist.application_task import (
+from server.models.telephonist.task import (
     ApplicationTask,
     TaskTrigger,
     TaskTypesRegistry,
@@ -37,7 +37,6 @@ class CreateApplication(AppBaseModel):
     description: Optional[str] = Field(max_length=3000)
     tags: Optional[List[str]]
     disabled: bool = False
-    application_type: str = Application.ARBITRARY_TYPE
 
 
 async def create_new_application(create_application: CreateApplication):
@@ -68,32 +67,27 @@ class ApplicationUpdate(AppBaseModel):
     tags: Optional[List[str]]
 
 
-async def get_application(application_id: PydanticObjectId):
+async def get_application_or_404(application_id: PydanticObjectId):
     return Errors.raise404_if_none(
         await Application.get(application_id),
         message=f"Application with id={id} not found",
     )
 
 
-async def get_application_task(
-    app_id: PydanticObjectId, task_id: UUID, *, fetch_links: bool = False
-):
-    task = await ApplicationTask.find_one(
-        {"_id": task_id},
-        ApplicationTask.NOT_DELETED_COND,
-        fetch_links=fetch_links,
+async def get_task_or_404(task_id_or_name: Union[UUID, str]):
+    if isinstance(task_id_or_name, UUID):
+        message = f"application task with _id={task_id_or_name} not found"
+        find = {"_id": task_id_or_name}
+    else:
+        message = f"application task with _id={task_id_or_name} not found"
+        find = {"qualified_name": task_id_or_name}
+    return Errors.raise404_if_none(
+        await ApplicationTask.find_one(
+            find,
+            ApplicationTask.NOT_DELETED_COND,
+        ),
+        message,
     )
-    if task is None:
-        raise HTTPException(
-            404, f"application task with id {task_id} not found"
-        )
-    if task.app_id != app_id:
-        raise HTTPException(
-            401,
-            f"application task with if {task_id} does not belong to the"
-            f" application with id {app_id}",
-        )
-    return task
 
 
 async def get_application_tasks(
@@ -166,6 +160,7 @@ async def define_application_task(app: Application, body: DefineTask):
     task_type, task_body = parse_task_type_or_raise(body.task_type, body.body)
     await raise_if_application_task_name_taken(app.id, body.name)
     task = ApplicationTask(
+        app_name=app.name,
         app_id=app.id,
         name=body.name,
         qualified_name=app.name + "/" + body.name,
@@ -199,9 +194,9 @@ class TaskUpdate(AppBaseModel):
     tags: Optional[List[str]]
     task_type: Optional[TaskTypesRegistry.KeyType]
     body: Optional[Any] = Missing
-    name: Optional[str]
     env: Optional[Dict[str, str]]
     triggers: Optional[List[TaskTrigger]]
+    display_name: Optional[str]
 
 
 async def apply_application_task_update(
@@ -215,12 +210,9 @@ async def apply_application_task_update(
         task.task_type, task.body = parse_task_type_or_raise(
             task.task_type, update.task_type
         )
-    if update.name is not None:
-        await raise_if_application_task_name_taken(task.app_id, update.name)
-        task.name = update.name
-        task.qualified_name = (
-            task.qualified_name.split("/")[0] + "/" + update.name
-        )
+    task.display_name = (
+        task.display_name if update.display_name else update.display_name
+    )
     task.env = task.env if update.env is None else update.env
     task.triggers = (
         task.triggers if update.triggers is None else update.triggers
@@ -325,6 +317,7 @@ async def sync_defined_tasks(
                 result.errors[task.id] = str(exc)
                 continue
             db_task = ApplicationTask(
+                app_name=app.name,
                 name=task.name,
                 qualified_name=app.name + "/" + task.name,
                 app_id=app.id,

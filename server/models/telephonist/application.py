@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime
 from typing import ClassVar, Iterable, List, Optional, Union
 
+import pymongo
 from beanie import Indexed, PydanticObjectId
 from beanie.operators import Inc
 from beanie.operators import Set as SetOp
@@ -72,6 +73,14 @@ class Application(SoftDeletes):
 
     class Collection:
         name = "applications"
+        indexes = [
+            [
+                ("name", pymongo.TEXT),
+                ("display_name", pymongo.TEXT),
+                ("tags", pymongo.TEXT),
+                ("description", pymongo.TEXT),
+            ]
+        ]
 
     class Settings:
         use_state_management = True
@@ -84,7 +93,6 @@ class ApplicationView(AppBaseModel):
     name: str
     description: Optional[str]
     access_key: str
-    application_type: str
     display_name: str
 
 

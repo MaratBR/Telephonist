@@ -1,3 +1,4 @@
+import logging
 import os.path
 
 import uvicorn
@@ -20,5 +21,9 @@ if __name__ == "__main__":
             "DISABLE_SSL_IN_DEBUG is set, SSL is disabled, serving from HTTP"
         )
     uvicorn.run(
-        "server.app:create_app", factory=True, reload=True, port=5789, **args
+        "server.app_debug:create_debug_app",
+        factory=True,
+        reload=True,
+        port=5789,
+        **args
     )

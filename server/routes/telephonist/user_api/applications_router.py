@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta
 from typing import Optional, Union
-from uuid import UUID
 
 import fastapi
 from beanie import PydanticObjectId
+from bson.errors import InvalidId
 from fastapi import Body, Depends, HTTPException, Query, params
 from starlette.requests import Request
 
@@ -14,6 +14,7 @@ from server.internal.telephonist import realtime
 from server.internal.telephonist.utils import Errors, require_model_with_id
 from server.models.common import (
     AppBaseModel,
+    Identifier,
     IdProjection,
     Pagination,
     PaginationResult,
@@ -24,6 +25,8 @@ from server.models.telephonist import (
     ApplicationView,
     AppLog,
     ConnectionInfo,
+    EventSequence,
+    EventSequenceState,
     OneTimeSecurityCode,
 )
 
@@ -31,10 +34,17 @@ _APPLICATION_NOT_FOUND = "Application not found"
 TOKEN: Union[params.Depends, UserTokenModel] = AccessToken()
 
 
-async def _get_application(app_id: PydanticObjectId):
+async def _get_application(
+    app_id_or_name: Union[PydanticObjectId, Identifier]
+):
     return Errors.raise404_if_none(
-        await Application.get_not_deleted(app_id),
-        f"Application with id={app_id} not found",
+        await Application.find_one(
+            Application.NOT_DELETED_COND,
+            {"_id": app_id_or_name}
+            if isinstance(app_id_or_name, PydanticObjectId)
+            else {"name": app_id_or_name},
+        ),
+        f'Application with "{app_id_or_name}" not found',
     )
 
 
@@ -73,9 +83,13 @@ async def check_if_application_name_taken(name: str = Query(...)):
     )
 
 
-@applications_router.get("/{app_id}")
-async def get_application(app_id: PydanticObjectId):
-    app = await _get_application(app_id)
+@applications_router.get("/{app_id_or_name}")
+async def get_application(app_id_or_name: str):
+    try:
+        app_id_or_name = PydanticObjectId(app_id_or_name)
+    except InvalidId:
+        pass
+    app = await _get_application(app_id_or_name)
     connections = await ConnectionInfo.find(
         ConnectionInfo.app_id == app.id
     ).to_list()
@@ -84,17 +98,16 @@ async def get_application(app_id: PydanticObjectId):
         .find(ApplicationTask.app_id == app.id)
         .to_list()
     )
-    return {"app": app, "connections": connections, "tasks": tasks}
-
-
-@applications_router.get("/name/{app_name}")
-async def find_application_by_name(app_name: str):
-    return Errors.raise404_if_none(
-        await Application.find_one(Application.name == app_name).project(
-            ApplicationView
-        ),
-        f"Application with name={app_name} not found",
-    )
+    sequences = await EventSequence.find(
+        EventSequence.app_id == app.id,
+        EventSequence.state == EventSequenceState.IN_PROGRESS,
+    ).to_list()
+    return {
+        "app": app,
+        "connections": connections,
+        "tasks": tasks,
+        "sequences": sequences,
+    }
 
 
 @applications_router.patch("/{app_id}", dependencies=[AccessToken()])
@@ -141,8 +154,12 @@ class CRRequest(AppBaseModel):
 
 
 @applications_router.post("/cr/start")
-async def request_code_registration(request: Request, body: CRRequest = Body(...)):
-    code = await OneTimeSecurityCode.new("new_app_code", body.client_name, ip_address=request.client.host)
+async def request_code_registration(
+    request: Request, body: CRRequest = Body(...)
+):
+    code = await OneTimeSecurityCode.new(
+        "new_app_code", body.client_name, ip_address=request.client.host
+    )
     return {
         "code": code.id,
         "expires_at": code.expires_at,
@@ -188,7 +205,7 @@ async def finish_code_registration(code: str, body: CRFinishRequest):
 
 def _detailed_application_task_view(task: ApplicationTask, app: Application):
     return {
-        **task.dict(exclude={"app_id"}),
+        **task.dict(exclude={"app_id", "app_name"}, by_alias=True),
         "app": app.dict(include={"name", "id", "display_name"}, by_alias=True),
     }
 
@@ -202,51 +219,22 @@ async def check_if_task_name_taken(name: str = Query(...)):
     )
 
 
-@applications_router.get("/{app_id}/defined-tasks")
+@applications_router.get("/{app_ident}/defined-tasks")
 async def get_application_tasks(
-    app_id: PydanticObjectId, include_deleted: bool = Query(False)
+    app_ident: str, include_deleted: bool = Query(False)
 ):
-    Errors.raise404_if_false(
-        await Application.find({"_id": app_id}).exists(),
-        message=f"Application with id={app_id} not found",
-    )
+    app = await _get_application(app_ident)
     return await _internal.get_application_tasks(
-        app_id, include_deleted=include_deleted
+        app.id, include_deleted=include_deleted
     )
 
 
 @applications_router.post(
-    "/{app_id}/defined-tasks", dependencies=[AccessToken()]
+    "/{app_ident}/defined-tasks", dependencies=[AccessToken()]
 )
-async def define_new_application_task__user(
-    app_id: PydanticObjectId, body: _internal.DefineTask = Body(...)
+async def define_application_task(
+    app_ident: str, body: _internal.DefineTask = Body(...)
 ):
-    app = await _get_application(app_id)
+    app = await _get_application(app_ident)
     task = await _internal.define_application_task(app, body)
     return _detailed_application_task_view(task, app)
-
-
-@applications_router.get("/{app_id}/defined-tasks/{task_id}")
-async def get_application_task(app_id: PydanticObjectId, task_id: UUID):
-    task = await _internal.get_application_task(app_id, task_id)
-    app = await Application.get(task.app_id)
-    assert app, "app not found"  # app must exist
-    return _detailed_application_task_view(task, app)
-
-
-@applications_router.delete("/{app_id}/defined-tasks/{task_id}")
-async def deactivate_task(app_id: PydanticObjectId, task_id: UUID):
-    task = await _internal.get_application_task(app_id, task_id)
-    await _internal.deactivate_application_task(task)
-    return {"detail": f"Task {task_id} has been deactivated"}
-
-
-@applications_router.patch("/{app_id}/defined-tasks/{task_id}")
-async def update_task(
-    app_id: PydanticObjectId,
-    task_id: UUID,
-    update: _internal.TaskUpdate = Body(...),
-):
-    task = await _internal.get_application_task(app_id, task_id)
-    await _internal.apply_application_task_update(task, update)
-    return task
