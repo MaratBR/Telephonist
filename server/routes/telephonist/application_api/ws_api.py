@@ -16,6 +16,7 @@ from server.internal.channels.hub import (
     ws_controller,
 )
 from server.internal.telephonist.utils import CG
+from server.models.common import AppBaseModel
 from server.models.telephonist import (
     Application,
     ConnectionInfo,
@@ -54,6 +55,11 @@ def _if_ready_only(f):
         return await f(self, *args, **kwargs)
 
     return wrapper
+
+
+class LogMessage(AppBaseModel):
+    sequence_id: Optional[PydanticObjectId]
+    logs: List[_internal.LogRecord]
 
 
 # unless https://github.com/tiangolo/fastapi/pull/2640 gets merged, we're stuck with this workaround
@@ -185,3 +191,13 @@ class AppReportHub(Hub):
             await self._get_application(), tasks
         )
         await self.send_message("tasks", tasks)
+
+    @bind_message("send_log")
+    @_if_ready_only
+    async def send_log(self, log_message: LogMessage):
+        models = await _internal.send_logs(
+            self.ticket.sub, log_message.sequence_id, log_message.logs
+        )
+        await self.send_message(
+            "logs_sent", {"count": len(models), "last": models[-1].id}
+        )

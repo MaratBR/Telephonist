@@ -18,6 +18,8 @@ bcrypt = "*"
 msgpack = "*"
 pydantic = {extras = ["dotenv"], version = "*"}
 arrow = "*"
+ujson = "*"
+orjson = "*"
 
 [dev-packages]
 pytest = "*"

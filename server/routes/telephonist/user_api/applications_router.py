@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 import fastapi
 from beanie import PydanticObjectId
+from beanie.odm.enums import SortDirection
 from bson.errors import InvalidId
 from fastapi import Body, Depends, HTTPException, Query, params
 from starlette.requests import Request
@@ -83,6 +84,11 @@ async def check_if_application_name_taken(name: str = Query(...)):
     )
 
 
+class SequenceLogs(AppBaseModel):
+    sequence_id: PydanticObjectId
+    logs: List[AppLog]
+
+
 @applications_router.get("/{app_id_or_name}")
 async def get_application(app_id_or_name: str):
     try:
@@ -98,15 +104,34 @@ async def get_application(app_id_or_name: str):
         .find(ApplicationTask.app_id == app.id)
         .to_list()
     )
-    sequences = await EventSequence.find(
-        EventSequence.app_id == app.id,
-        EventSequence.state == EventSequenceState.IN_PROGRESS,
-    ).to_list()
+    in_progress_sequences = (
+        await EventSequence.find(
+            EventSequence.app_id == app.id,
+            EventSequence.state == EventSequenceState.IN_PROGRESS,
+        )
+        .sort(("_id", SortDirection.DESCENDING))
+        .to_list()
+    )
+    if len(in_progress_sequences) < 50:
+        completed_sequences = (
+            await EventSequence.find(
+                EventSequence.app_id == app.id,
+                EventSequence.state != EventSequenceState.IN_PROGRESS,
+            )
+            .sort(("_id", SortDirection.DESCENDING))
+            .limit(50 - len(in_progress_sequences))
+            .to_list()
+        )
+    else:
+        completed_sequences = []
     return {
         "app": app,
         "connections": connections,
         "tasks": tasks,
-        "sequences": sequences,
+        "sequences": {
+            "completed": completed_sequences,
+            "in_progress": in_progress_sequences,
+        },
     }
 
 
@@ -238,3 +263,35 @@ async def define_application_task(
     app = await _get_application(app_ident)
     task = await _internal.define_application_task(app, body)
     return _detailed_application_task_view(task, app)
+
+
+@applications_router.get("/{app_id_or_name}/sequences/{sequence_id}")
+async def get_sequence(app_id_or_name: str, sequence_id: PydanticObjectId):
+    try:
+        app_id_or_name = PydanticObjectId(app_id_or_name)
+    except InvalidId:
+        pass
+    app = await _get_application(app_id_or_name)
+    sequence = await EventSequence.find_one(
+        EventSequence.id == sequence_id, EventSequence.app_id == app.id
+    )
+    Errors.raise404_if_none(sequence)
+    logs = (
+        await AppLog.find(AppLog.sequence_id == sequence.id)
+        .sort(("created_at", SortDirection.DESCENDING))
+        .limit(3000)
+        .to_list()
+    )
+    return {
+        **sequence.dict(by_alias=True, exclude={"app_id"}),
+        "app": app.dict(by_alias=True, include={"id", "name", "display_name"}),
+        "logs": [
+            {
+                "t": log.created_at,
+                "severity": log.severity,
+                "body": log.body,
+                "_id": log.id,
+            }
+            for log in logs
+        ],
+    }

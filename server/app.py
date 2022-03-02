@@ -1,8 +1,11 @@
 import logging
-from typing import Optional
+import random
+from typing import Any, Optional
 
 import aioredis
+import orjson
 from fastapi import FastAPI
+from fastapi.responses import ORJSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
@@ -14,6 +17,7 @@ from server.internal.channels import (
     stop_backplane,
 )
 from server.internal.channels.backplane import BackplaneBase, RedisBackplane
+from server.models.common.base_model import orjson_dumps
 from server.routes import (
     application_api_router,
     auth_api_router,
@@ -27,7 +31,7 @@ def create_app(
     motor_client: Optional[AsyncIOMotorClient] = None,
     backplane: Optional[BackplaneBase] = None,
 ):
-    app = FastAPI()
+    app = FastAPI(default_response_class=ORJSONResponse)
     logger = logging.getLogger("telephonist.application")
     app.add_middleware(
         CORSMiddleware,
@@ -43,6 +47,21 @@ def create_app(
     # see https://github.com/tiangolo/fastapi/pull/2640
     # (when it's merged we can remove ws_root_router and replace it with something else)
     app.include_router(ws_root_router)
+
+    from server.models.common import AppBaseModel
+
+    class Test(AppBaseModel):
+        test: Any
+
+        class Config:
+            json_loads = orjson.loads
+            json_dumps = orjson_dumps
+
+    v = []
+    for i in range(20000):
+        v.append(
+            {"t": 1232, "b": random.randint(0, 1000000), "lorem": "ipsum"}
+        )
 
     @app.get("/")
     def index(request: Request):

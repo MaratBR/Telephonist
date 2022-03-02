@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+import orjson
 from beanie import Document
 from pydantic import BaseModel as _BaseModel
 
@@ -10,6 +11,11 @@ def stringify_datetime(dt: datetime):
     if dt.tzinfo is timezone.utc:
         return dt.isoformat()
     return dt.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def orjson_dumps(v, *, default):
+    # orjson.dumps returns bytes, to match standard json.dumps we need to decode
+    return orjson.dumps(v, default=default).decode()
 
 
 class AppBaseModel(_BaseModel):

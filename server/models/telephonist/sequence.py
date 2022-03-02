@@ -3,12 +3,11 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from beanie import Link, PydanticObjectId
+from beanie import PydanticObjectId
 from pydantic import Field
 
 from server.database import register_model
 from server.models.common import BaseDocument
-from server.models.telephonist import Application
 
 
 class EventSequenceState(str, enum.Enum):
@@ -29,7 +28,6 @@ class EventSequenceState(str, enum.Enum):
 @register_model
 class EventSequence(BaseDocument):
     name: str
-    app: Optional[Link[Application]]
     app_id: PydanticObjectId
     finished_at: Optional[datetime]
     description: Optional[str]

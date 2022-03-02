@@ -9,8 +9,9 @@ from server.internal.channels import WSTicket, WSTicketModel
 from server.internal.channels.hub import Hub, bind_message, ws_controller
 from server.internal.telephonist import CG
 from server.models.auth import User
+from server.routes.telephonist.ws_root_router import ws_root_router
 
-ws_router = APIRouter(prefix="/ws")
+ws_router = APIRouter()
 
 
 @ws_router.get("/issue-ws-ticket")
@@ -22,7 +23,7 @@ async def issue_user_ws_ticket(token=AccessToken()):
     }
 
 
-@ws_controller(ws_router, "")
+@ws_controller(ws_root_router, "/_ws/user-api/main")
 class UserHub(Hub):
     ticket: WSTicketModel[User] = WSTicket(User)
 

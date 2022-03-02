@@ -1,11 +1,12 @@
 import logging
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, cast
 from uuid import UUID, uuid4
 
 import pymongo
 from beanie import PydanticObjectId
 from pydantic import Field
+from pymongo.client_session import ClientSession
 
 from server.database import register_model
 from server.models.common import AppBaseModel, BaseDocument
@@ -40,6 +41,21 @@ class ConnectionInfo(BaseDocument):
     is_connected: bool = False
     event_subscriptions: List[str] = Field(default_factory=list)
     bound_sequences: List[PydanticObjectId] = Field(default_factory=list)
+
+    @classmethod
+    def get(
+        cls,
+        document_id: UUID,
+        session: Optional[ClientSession] = None,
+        ignore_cache: bool = False,
+        fetch_links: bool = False,
+    ):
+        return super(ConnectionInfo, cls).get(
+            cast(PydanticObjectId, document_id),
+            session,
+            ignore_cache,
+            fetch_links,
+        )
 
     @classmethod
     async def on_database_ready(cls):

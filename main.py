@@ -1,5 +1,7 @@
+import argparse
 import logging
 import os.path
+import sys
 
 import uvicorn
 
@@ -20,10 +22,14 @@ if __name__ == "__main__":
         print(
             "DISABLE_SSL_IN_DEBUG is set, SSL is disabled, serving from HTTP"
         )
+    parser = argparse.ArgumentParser(description="Process some integers.")
+    parser.add_argument("--reload", action="store_const", const=True)
+    sys_args = parser.parse_args(sys.argv[1:])
+
     uvicorn.run(
         "server.app_debug:create_debug_app",
         factory=True,
-        reload=True,
+        reload=sys_args.reload or False,
         port=5789,
         **args
     )

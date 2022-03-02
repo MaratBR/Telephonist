@@ -25,7 +25,6 @@ class AppLog(BaseDocument):
     app_id: PydanticObjectId
     severity: Severity = Severity.UNKNOWN
     body: Any
-    task_name: Optional[str]
     sequence_id: Optional[PydanticObjectId]
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -36,21 +35,6 @@ class AppLog(BaseDocument):
                 "capped": True,
                 "size": settings.logs_capped_collection_max_size_mb * 2**20,
             }
-
-    @classmethod
-    async def _log(
-        cls,
-        body: Any,
-        app_id: PydanticObjectId,
-        severity: Severity,
-        meta: Optional[Any],
-    ):
-        await cls(
-            app_id=app_id,
-            severity=severity,
-            meta=meta,
-            body=body,
-        ).insert()
 
     @classmethod
     def find_before(cls, before: datetime) -> FindMany["AppLog"]:

@@ -48,6 +48,12 @@ class MonitoringEvents(Prefixer):
     def sequence_events(self, sequence_id: PydanticObjectId):
         return self("sequenceEvents", sequence_id)
 
+    def sequence_logs(self, sequence_id: PydanticObjectId):
+        return self("sequenceLogs", sequence_id)
+
+    def app_logs(self, app_id: PydanticObjectId):
+        return self("appLogs", app_id)
+
 
 class AuthEvents(Prefixer):
     def user(self, user_id: PydanticObjectId):

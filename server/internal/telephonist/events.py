@@ -83,7 +83,7 @@ async def publish_events(*events: Event):
     try:
         result = await Event.insert_many(events)
         for i in range(len(events)):
-            events[i].id = result.inserted_ids[i]
+            events[i].id = PydanticObjectId(result.inserted_ids[i])
         await notify_events(*events)
     except Exception as exc:
         _logger.exception(

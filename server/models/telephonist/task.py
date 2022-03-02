@@ -44,6 +44,11 @@ TaskTypesRegistry.INSTANCE.update(
 TriggersRegistry.INSTANCE.update(cron=str, events=str, fsnotify=str)
 
 
+class TaskBody(AppBaseModel):
+    type_: str = Field(alias="type", default=TaskTypesRegistry.ARBITRARY)
+    value: Optional[Any] = Field(default_factory=dict)
+
+
 @register_model
 class ApplicationTask(SoftDeletes):
     id: UUID = Field(default_factory=uuid4, alias="_id")
@@ -55,8 +60,7 @@ class ApplicationTask(SoftDeletes):
     tags: List[str] = Field(default_factory=list)
     display_name: Optional[str] = None
     triggers: List[TaskTrigger] = Field(default_factory=list)
-    body: Optional[Any]
-    task_type: TaskTypesRegistry.KeyType
+    body: TaskBody = Field(default_factory=TaskBody)
     env: Dict[str, str] = Field(default_factory=dict)
     last_updated: datetime = Field(default_factory=datetime.utcnow)
     created_at: datetime = Field(default_factory=datetime.utcnow)

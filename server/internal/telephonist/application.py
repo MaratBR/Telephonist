@@ -26,6 +26,7 @@ from server.models.telephonist import (
 )
 from server.models.telephonist.task import (
     ApplicationTask,
+    TaskBody,
     TaskTrigger,
     TaskTypesRegistry,
 )
@@ -110,7 +111,7 @@ class DefineTask(AppBaseModel):
     )  # for the sake of consistency
     name: Identifier
     description: str = ""
-    task_type: TaskTypesRegistry.KeyType = TaskTypesRegistry.ARBITRARY
+    body: TaskBody
     body: Optional[Any]
     env: Dict[str, str] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
@@ -157,7 +158,6 @@ async def raise_if_application_task_name_taken(
 
 
 async def define_application_task(app: Application, body: DefineTask):
-    task_type, task_body = parse_task_type_or_raise(body.task_type, body.body)
     await raise_if_application_task_name_taken(app.id, body.name)
     task = ApplicationTask(
         app_name=app.name,
@@ -165,8 +165,7 @@ async def define_application_task(app: Application, body: DefineTask):
         name=body.name,
         qualified_name=app.name + "/" + body.name,
         description=body.name,
-        body=task_body,
-        task_type=task_type,
+        body=body.body,
         env=body.env,
         app=app,
     )
@@ -192,8 +191,7 @@ class TaskUpdate(AppBaseModel):
 
     description: Optional[str]
     tags: Optional[List[str]]
-    task_type: Optional[TaskTypesRegistry.KeyType]
-    body: Optional[Any] = Missing
+    body: Optional[TaskBody]
     env: Optional[Dict[str, str]]
     triggers: Optional[List[TaskTrigger]]
     display_name: Optional[str]
@@ -202,14 +200,7 @@ class TaskUpdate(AppBaseModel):
 async def apply_application_task_update(
     task: ApplicationTask, update: TaskUpdate
 ):
-    if update.body is not TaskUpdate.Missing or update.task_type is not None:
-        if update.body is not TaskUpdate.Missing:
-            task.body = update.body
-        if update.task_type:
-            task.task_type = update.task_type
-        task.task_type, task.body = parse_task_type_or_raise(
-            task.task_type, update.task_type
-        )
+    task.body = task.body if update.body is None else update.body
     task.display_name = (
         task.display_name if update.display_name else update.display_name
     )
@@ -241,7 +232,6 @@ class DefinedTask(DefineTask):
             description=t.description,
             name=t.name,
             last_updated=t.last_updated,
-            task_type=t.task_type,
             body=t.body,
             triggers=t.triggers,
         )
@@ -298,24 +288,11 @@ async def sync_defined_tasks(
                 db_task.name = task.name
                 db_task.triggers = task.triggers
 
-                # validation
-                try:
-                    db_task.task_type, db_task.body = parse_task_type_or_raise(
-                        task.task_type, task.body
-                    )
-                except InvalidTask as exc:
-                    result.errors[task.id] = str(exc)
-                    continue
+                # TODO validate body, maybe?
 
                 await db_task.replace()
         else:
-            try:
-                task.task_type, task.body = parse_task_type_or_raise(
-                    task.task_type, task.body
-                )
-            except InvalidTask as exc:
-                result.errors[task.id] = str(exc)
-                continue
+            # TODO validate body, maybe?
             db_task = ApplicationTask(
                 app_name=app.name,
                 name=task.name,
@@ -326,7 +303,6 @@ async def sync_defined_tasks(
                 env=task.env,
                 body=task.body,
                 triggers=task.triggers,
-                task_type=task.task_type,
             )
             await db_task.insert()
             result.tasks.append(DefinedTask.from_db(db_task))
