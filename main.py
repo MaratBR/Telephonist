@@ -3,6 +3,7 @@ import logging
 import os.path
 import sys
 
+import anyio
 import uvicorn
 
 if __name__ == "__main__":

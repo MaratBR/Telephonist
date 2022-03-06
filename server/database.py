@@ -5,6 +5,7 @@ from typing import Optional, TypeVar
 
 import motor.motor_asyncio
 from beanie import Document, init_beanie
+from motor.core import AgnosticDatabase
 from pymongo.errors import CollectionInvalid
 
 from server.settings import settings
@@ -17,6 +18,10 @@ _logger = logging.getLogger("telephonist.database")
 def motor_client():
     assert _client is not None, "Database is not initialized yet!"
     return _client
+
+
+def get_database() -> AgnosticDatabase:
+    return motor_client()[settings.mongodb_db_name]
 
 
 TModelType = TypeVar("TModelType")  # bound=Type[Document]

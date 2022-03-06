@@ -30,6 +30,7 @@ __all__ = (
 )
 
 from server.models.common import AppBaseModel
+from server.models.common.base_model import orjson_dumps
 
 
 class OrderingDirection(str, Enum):
@@ -192,7 +193,8 @@ class Pagination:
         items = await q.to_list()
         elapsed = time.time_ns() - now
 
-        return PaginationResult(
+        # NOTE we know it's valid
+        return PaginationResult.construct(
             meta={"db:took": elapsed / 1000000},
             result=items,
             page=self.params.page,

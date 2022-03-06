@@ -20,6 +20,7 @@ pydantic = {extras = ["dotenv"], version = "*"}
 arrow = "*"
 ujson = "*"
 orjson = "*"
+fastapi-cache2 = "*"
 
 [dev-packages]
 pytest = "*"

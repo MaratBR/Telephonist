@@ -3,6 +3,9 @@ from typing import Optional
 
 from beanie import PydanticObjectId
 from fastapi import APIRouter, Depends
+from fastapi.responses import ORJSONResponse
+from fastapi_cache.decorator import cache
+from starlette.responses import Response
 
 from server.internal.telephonist import Errors
 from server.models.common import AppBaseModel, Pagination
@@ -44,13 +47,16 @@ class EventsFilter(AppBaseModel):
 
 
 @events_router.get("")
+@cache(expire=1)
 async def get_events(
     filter_data=QueryDict(EventsFilter),
     pagination: EventsPagination = Depends(),
 ):
-    return await pagination.paginate(
-        Event, filter_condition=filter_data.get_filters()
-    )
+    return Response((
+        await pagination.paginate(
+            Event, filter_condition=filter_data.get_filters()
+        )
+    ).json(by_alias=True), headers={"Content-Type": "application/json"})
 
 
 @events_router.get("/{event_id}")

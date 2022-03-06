@@ -85,14 +85,25 @@ async def find_defined_tasks(names: List[str] = Body(...), app=APPLICATION):
 async def update_app_task(
     task_id: UUID, app=APPLICATION, update: _internal.TaskUpdate = Body(...)
 ):
-    task = await _internal.get_task_or_404(app.id, task_id)
+    task = await _internal.get_task_or_404(task_id)
+    if task.app_id != app.id:
+        raise HTTPException(
+            401,
+            "cannot update the task that belongs to a different applications",
+        )
     await _internal.apply_application_task_update(task, update)
     return task
 
 
 @rest_router.delete("/defined-tasks/{task_id}")
 async def deactivate_task(task_id: UUID, app=APPLICATION):
-    task = await _internal.get_task_or_404(app.id, task_id)
+    task = await _internal.get_task_or_404(task_id)
+    if task.app_id != app.id:
+        raise HTTPException(
+            401,
+            "cannot deactivated the task that belongs to a different"
+            " applications",
+        )
     await _internal.deactivate_application_task(task)
     return {"detail": "Application task has been deleted"}
 
@@ -140,6 +151,7 @@ async def finish_sequence(
     sequence = await _internal.get_sequence(sequence_id, app.id)
     await _internal.finish_sequence(sequence, update, request.client.host)
     await _internal.notify_sequence(sequence)
+
     return {"detail": "Sequence finished"}
 
 

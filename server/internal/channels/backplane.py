@@ -1,90 +1,25 @@
 import asyncio
-import importlib
 import logging
-import struct
+import pickle
 import time
 import warnings
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from functools import partial
 from typing import *
-from uuid import UUID
 
-import msgpack
 from aioredis import Redis
-from beanie import PydanticObjectId
-from bson import ObjectId
-from pydantic import BaseModel
 
-_MAX32INT = 4294967295
 _logger = logging.getLogger("telephonist.channels")
 
 
-def _default_encoder(o: Any) -> Any:
-    # we use pydantic's BaseModel rather than telephonist's AppBaseModel
-    # here because we want to check for both models and documents
-    if isinstance(o, BaseModel):
-        model_class = type(o)
-        return {
-            "__pydantic__": model_class.__module__
-            + ":"
-            + model_class.__qualname__,
-            "_": o.dict(by_alias=True),
-        }
-    elif isinstance(o, datetime):
-        if o.tzinfo:
-            offset = int(o.tzinfo.utcoffset(o).total_seconds())
-        else:
-            offset = _MAX32INT
-        return msgpack.ExtType(53, struct.pack("!dI", o.timestamp(), offset))
-    elif isinstance(o, ObjectId):
-        return msgpack.ExtType(54, o.binary)
-    elif isinstance(o, UUID):
-        return msgpack.ExtType(55, o.bytes)
-    return o
-
-
-_modules_cache = {}
-
-
-def _object_hook(obj: dict):
-    if "__pydantic__" in obj:
-        module, qualname = obj["__pydantic__"].split(":", 1)
-        if module not in _modules_cache:
-            _modules_cache[module] = importlib.import_module(module)
-        model_class = _modules_cache[module]
-        parts = qualname.split(".")
-        for p in parts:
-            model_class = getattr(model_class, p)
-        return model_class(**obj["_"])
-    return obj
-
-
-def _ext_hook(code: int, data: Any):
-    if code == 54:
-        return PydanticObjectId(data)
-    elif code == 53:
-        ts, offset = struct.unpack("!dI", data)
-        return datetime.fromtimestamp(
-            ts,
-            timezone(timedelta(seconds=offset))
-            if offset != _MAX32INT
-            else None,
-        )
-    elif code == 55:
-        return UUID(bytes=data)
-    return msgpack.ExtType(code, data)
-
-
 def encode_object(data: Any) -> bytes:
-    return msgpack.packb(data, default=_default_encoder)
+    return pickle.dumps(data)
 
 
 def decode_object(string: bytes) -> Any:
-    return msgpack.unpackb(
-        string, ext_hook=_ext_hook, object_hook=_object_hook
-    )
+    return pickle.loads(string)
 
 
 class Subscription:

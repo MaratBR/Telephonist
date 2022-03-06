@@ -8,6 +8,8 @@ from fastapi import HTTPException
 
 from server.internal.channels import get_channel_layer
 from server.internal.telephonist import CG, realtime
+from server.internal.transit import dispatch, register_handler
+from server.internal.transit.transit import BatchConfig
 from server.models.common import AppBaseModel, Identifier
 from server.models.telephonist import (
     ApplicationTask,
@@ -15,6 +17,7 @@ from server.models.telephonist import (
     EventSequence,
     EventSequenceState,
 )
+from server.models.telephonist.counter import Counter
 
 _logger = logging.getLogger("telephonist.api.events")
 
@@ -125,6 +128,50 @@ async def get_sequence(
     return sequence
 
 
+class SequenceCreated(AppBaseModel):
+    sequence_id: PydanticObjectId
+    app_id: PydanticObjectId
+    task_id: Optional[UUID]
+
+
+class SequenceFinished(AppBaseModel):
+    sequence_id: PydanticObjectId
+    app_id: PydanticObjectId
+    task_id: Optional[UUID]
+    error: Optional[Any]
+
+
+@register_handler(batch=BatchConfig(max_batch_size=100, delay=1))
+async def _on_sequence_created(sequences: list[SequenceCreated]):
+    await Counter.inc_counter("sequences", len(sequences))
+    for m in sequences:
+        await get_channel_layer().group_send(
+            CG.monitoring.app(m.app_id),
+            "sequence",
+            {"action": "new", "sequence_id": m.sequence_id},
+        )
+
+
+@register_handler(batch=BatchConfig(max_batch_size=100, delay=1))
+async def _on_sequence_finished(sequences: list[SequenceFinished]):
+    failed_sequences = 0
+    for m in sequences:
+        if m.error:
+            failed_sequences += 1
+        await get_channel_layer().group_send(
+            CG.monitoring.app(m.app_id),
+            "sequence",
+            {
+                "action": "finished",
+                "sequence_id": m.sequence_id,
+                "error": m.error,
+            },
+        )
+
+    await Counter.inc_counter("failed_sequences", failed_sequences)
+    await Counter.inc_counter("finished_sequences", len(sequences))
+
+
 async def create_sequence(
     app_id: PydanticObjectId, descriptor: SequenceDescriptor, ip_address: str
 ):
@@ -164,6 +211,9 @@ async def create_sequence(
         task_id=descriptor.task_id,
     )
     await sequence.insert()
+    await dispatch(
+        SequenceCreated(sequence_id=sequence.id, app_id=sequence.app_id)
+    )
 
     # create and publish "start" event
     await publish_events(
@@ -200,6 +250,9 @@ async def finish_sequence(
         sequence.state = EventSequenceState.SUCCEEDED
     sequence.meta = {}  # TODO ????
     await sequence.replace()
+    await dispatch(
+        SequenceFinished(sequence_id=sequence.id, app_id=sequence.app_id)
+    )
 
     stop_event = (
         realtime.CANCELLED_EVENT
