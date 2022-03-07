@@ -1,5 +1,5 @@
 from .application import Application, ApplicationView
-from .connection_info import ConnectionInfo, StatusEntry
+from .connection_info import ConnectionInfo
 from .events import Event
 from .log import AppLog, Severity
 from .security_code import OneTimeSecurityCode

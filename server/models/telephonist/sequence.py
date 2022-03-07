@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from beanie import PydanticObjectId
@@ -31,7 +31,7 @@ class EventSequence(BaseDocument):
     app_id: PydanticObjectId
     finished_at: Optional[datetime]
     description: Optional[str]
-    meta: Optional[Dict[str, Any]]
+    meta: Optional[dict[str, Any]]
     state: EventSequenceState = EventSequenceState.IN_PROGRESS
     task_name: Optional[str]
     task_id: Optional[UUID]

@@ -1,6 +1,8 @@
+import hashlib
+import json
 import logging
 from datetime import datetime
-from typing import List, Optional, cast
+from typing import Awaitable, List, Optional, Union, cast
 from uuid import UUID, uuid4
 
 import pymongo
@@ -15,13 +17,21 @@ from server.settings import settings
 _logger = logging.getLogger("telephonist.database")
 
 
-class StatusEntry(AppBaseModel):
-    progress: Optional[int]
-    tasks_total: Optional[int]
-    is_intermediate: bool = False
-    title: Optional[str]
-    subtitle: Optional[str]
-    task_name: Optional[str]
+class ApplicationClientInfo(AppBaseModel):
+    name: str
+    version: str
+    compatibility_key: str
+    os_info: str
+    connection_uuid: UUID
+    machine_id: str = Field(max_length=200)
+    instance_id: Optional[UUID]
+
+    def get_fingerprint(self):
+        return hashlib.sha256(
+            json.dumps(
+                [1, self.name, self.compatibility_key]
+            ).encode()  # 1 - fingerprint version
+        ).hexdigest()
 
 
 @register_model
@@ -40,7 +50,6 @@ class ConnectionInfo(BaseDocument):
     machine_id: Optional[str]
     is_connected: bool = False
     event_subscriptions: List[str] = Field(default_factory=list)
-    bound_sequences: List[PydanticObjectId] = Field(default_factory=list)
 
     @classmethod
     def get(
@@ -49,13 +58,83 @@ class ConnectionInfo(BaseDocument):
         session: Optional[ClientSession] = None,
         ignore_cache: bool = False,
         fetch_links: bool = False,
-    ):
+    ) -> Awaitable["ConnectionInfo"]:
         return super(ConnectionInfo, cls).get(
             cast(PydanticObjectId, document_id),
             session,
             ignore_cache,
             fetch_links,
         )
+
+    @classmethod
+    def remove_subscription(
+        cls,
+        connection_id: UUID,
+        events: Union[str, list[str], tuple[str], set[str]],
+    ):
+        cls.find({"_id": connection_id}).update(
+            {
+                "$pull": {
+                    "event_subscriptions": events[0]
+                    if len(events) == 1
+                    else {"$each": len(events)}
+                }
+            }
+        )
+
+    @classmethod
+    def add_subscription(
+        cls,
+        connection_id: UUID,
+        events: Union[str, list[str], tuple[str], set[str]],
+    ):
+        cls.find({"_id": connection_id}).update(
+            {
+                "$addToSet": {
+                    "event_subscriptions": events[0]
+                    if len(events) == 1
+                    else {"$each": len(events)}
+                }
+            }
+        )
+
+    @classmethod
+    async def find_or_create(
+        cls,
+        app_id: PydanticObjectId,
+        info: ApplicationClientInfo,
+        ip_address: str,
+    ):
+        connection = await cls.find_one(
+            ConnectionInfo.id == info.connection_uuid
+        )
+
+        if connection is None:
+            connection = ConnectionInfo(
+                id=info.connection_uuid,
+                ip=ip_address,
+                client_name=info.name,
+                client_version=info.version,
+                app_id=app_id,
+                fingerprint=info.get_fingerprint(),
+                os=info.os_info,
+                is_connected=True,
+                machine_id=info.machine_id,
+                instance_id=info.instance_id,
+            )
+            await connection.insert()
+        else:
+            connection.is_connected = True
+            connection.machine_id = info.machine_id
+            connection.instance_id = info.instance_id
+            connection.os = info.os_info
+            connection.app_id = app_id
+            connection.client_name = info.name
+            connection.client_version = info.version
+            connection.fingerprint = info.get_fingerprint()
+            connection.ip = ip_address
+            await connection.save_changes()
+        return connection
 
     @classmethod
     async def on_database_ready(cls):

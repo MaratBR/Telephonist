@@ -2,15 +2,21 @@ from datetime import datetime
 from typing import Optional
 
 from beanie import PydanticObjectId
+from beanie.odm.enums import SortDirection
 from fastapi import APIRouter, Depends
-from fastapi.responses import ORJSONResponse
 from fastapi_cache.decorator import cache
 from starlette.responses import Response
 
 from server.internal.telephonist import Errors
 from server.models.common import AppBaseModel, Pagination
-from server.models.telephonist import Event, EventSequence
-from server.utils.common import QueryDict
+from server.models.telephonist import (
+    Application,
+    AppLog,
+    ConnectionInfo,
+    Event,
+    EventSequence,
+)
+from server.utils.common import Querydict
 
 events_router = APIRouter(prefix="/events")
 
@@ -49,14 +55,17 @@ class EventsFilter(AppBaseModel):
 @events_router.get("")
 @cache(expire=1)
 async def get_events(
-    filter_data=QueryDict(EventsFilter),
+    filter_data=Querydict(EventsFilter),
     pagination: EventsPagination = Depends(),
 ):
-    return Response((
-        await pagination.paginate(
-            Event, filter_condition=filter_data.get_filters()
-        )
-    ).json(by_alias=True), headers={"Content-Type": "application/json"})
+    return Response(
+        (
+            await pagination.paginate(
+                Event, filter_condition=filter_data.get_filters()
+            )
+        ).json(by_alias=True),
+        headers={"Content-Type": "application/json"},
+    )
 
 
 @events_router.get("/{event_id}")
@@ -69,7 +78,38 @@ async def get_event(event_id: PydanticObjectId):
 
 @events_router.get("/sequences/{sequence_id}")
 async def get_sequence(sequence_id: PydanticObjectId):
-    return Errors.raise404_if_none(
-        await EventSequence.get(sequence_id),
+    sequence = await EventSequence.get(sequence_id)
+    Errors.raise404_if_none(
+        sequence,
         message=f"Event sequence with id={sequence_id} not found",
     )
+    app = await Application.get(sequence.app_id)
+    assert app, "Application must exist"
+    if sequence.connection_id:
+        connection = await ConnectionInfo.get(sequence.connection_id)
+        assert connection, "Connection must exist"
+        connection_obj = connection.dict(by_alias=True)
+    else:
+        connection_obj = None
+    logs = (
+        await AppLog.find(AppLog.sequence_id == sequence.id)
+        .sort(("created_at", SortDirection.DESCENDING))
+        .limit(100)
+        .to_list()
+    )
+    return {
+        **sequence.dict(by_alias=True, exclude={"app_id", "connection_id"}),
+        "app": app.dict(
+            by_alias=True, include={"id", "deleted_at", "name", "display_name"}
+        ),
+        "connection": connection_obj,
+        "logs": [
+            {
+                "_id": l.id,
+                "t": l.created_at,
+                "body": l.body,
+                "severity": l.severity,
+            }
+            for l in logs
+        ],
+    }

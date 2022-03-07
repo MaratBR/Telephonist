@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, List, Optional, Union
 from uuid import UUID, uuid4
 
 import pymongo
@@ -36,7 +36,7 @@ TaskTypesRegistry.INSTANCE.update(
     {
         TaskTypesRegistry.EXEC: str,
         TaskTypesRegistry.SCRIPT: str,
-        TaskTypesRegistry.ARBITRARY: Dict[str, Any],
+        TaskTypesRegistry.ARBITRARY: dict[str, Any],
     }
 )
 
@@ -61,7 +61,7 @@ class ApplicationTask(SoftDeletes):
     display_name: Optional[str] = None
     triggers: List[TaskTrigger] = Field(default_factory=list)
     body: TaskBody = Field(default_factory=TaskBody)
-    env: Dict[str, str] = Field(default_factory=dict)
+    env: dict[str, str] = Field(default_factory=dict)
     last_updated: datetime = Field(default_factory=datetime.utcnow)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

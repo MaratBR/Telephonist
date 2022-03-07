@@ -24,6 +24,7 @@ from server.models.telephonist import (
     EventSequenceState,
     Server,
 )
+from server.models.telephonist.connection_info import ApplicationClientInfo
 from server.routes.telephonist.application_api._utils import APPLICATION
 from server.routes.telephonist.ws_root_router import ws_root_router
 
@@ -39,7 +40,7 @@ async def issue_websocket_token(app=APPLICATION):
     }
 
 
-class HelloMessage(_internal.ApplicationClientInfo):
+class HelloMessage(ApplicationClientInfo):
     subscriptions: Optional[List[str]]
     pid: Optional[int]
 
@@ -116,7 +117,13 @@ class AppReportHub(Hub):
             self._connection_info = await ConnectionInfo.get(
                 self._connection_info.id
             )
-            await _internal.on_connection_disconnected(self._connection_info)
+            self._connection_info.is_connected = False
+            self._connection_info.expires_at = datetime.utcnow() + timedelta(
+                hours=12
+            )
+            self._connection_info.disconnected_at = datetime.utcnow()
+            await self._connection_info.save_changes()
+            await _internal.notify_connection_changed(self._connection_info)
 
     @bind_message("hello")
     async def on_hello(self, message: HelloMessage):
@@ -126,7 +133,7 @@ class AppReportHub(Hub):
             )
             return
         self._ready = True
-        self._connection_info = await _internal.get_or_create_connection(
+        self._connection_info = await ConnectionInfo.find_or_create(
             self._app_id, message, self.websocket.client.host
         )
         await Server.report_server(
@@ -168,10 +175,9 @@ class AppReportHub(Hub):
     @_if_ready_only
     async def subscribe(self, event_type: str):
         await self.connection.add_to_group(CG.events(event_type=event_type))
-        await _internal.add_connection_subscription(
-            self._connection_info.id, [event_type]
+        await ConnectionInfo.add_subscription(
+            self._connection_info.id, event_type
         )
-        await self._send_connection()
 
     @bind_message("unsubscribe")
     @_if_ready_only
@@ -179,10 +185,9 @@ class AppReportHub(Hub):
         await self.connection.remove_from_group(
             CG.events(event_type=event_type)
         )
-        await _internal.remote_connection_subscription(
-            self._connection_info.id, [event_type]
+        await ConnectionInfo.remove_subscription(
+            self._connection_info.id, event_type
         )
-        await self._send_connection()
 
     @bind_message("synchronize")
     @_if_ready_only

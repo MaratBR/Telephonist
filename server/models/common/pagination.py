@@ -6,7 +6,6 @@ from enum import Enum
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
     Generic,
     List,
     Optional,
@@ -30,7 +29,6 @@ __all__ = (
 )
 
 from server.models.common import AppBaseModel
-from server.models.common.base_model import orjson_dumps
 
 
 class OrderingDirection(str, Enum):
@@ -157,7 +155,7 @@ class Pagination:
         cls: Type[Document],
         project: Optional[Type[AppBaseModel]] = None,
         filter_condition: Optional[
-            Union[Dict[str, Any], List[Dict[str, Any]], List[bool]]
+            Union[dict[str, Any], List[dict[str, Any]], List[bool]]
         ] = None,
     ):
         if filter_condition:

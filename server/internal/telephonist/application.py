@@ -1,7 +1,5 @@
-import hashlib
-import json
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Union
+from datetime import datetime, timezone
+from typing import Any, List, Optional, Union
 from uuid import UUID, uuid4
 
 from beanie import PydanticObjectId
@@ -11,7 +9,6 @@ from pydantic import Field, ValidationError, parse_obj_as, validator
 from starlette import status
 
 from server.internal.channels import get_channel_layer
-from server.internal.telephonist import realtime
 from server.internal.telephonist.utils import CG, Errors
 from server.models.common import (
     AppBaseModel,
@@ -19,11 +16,7 @@ from server.models.common import (
     IdProjection,
     convert_to_utc,
 )
-from server.models.telephonist import (
-    Application,
-    ConnectionInfo,
-    EventSequence,
-)
+from server.models.telephonist import Application, ConnectionInfo
 from server.models.telephonist.task import (
     ApplicationTask,
     TaskBody,
@@ -113,7 +106,7 @@ class DefineTask(AppBaseModel):
     description: str = ""
     body: TaskBody
     body: Optional[Any]
-    env: Dict[str, str] = Field(default_factory=dict)
+    env: dict[str, str] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
     triggers: List[TaskTrigger] = Field(default_factory=list)
 
@@ -170,7 +163,7 @@ async def define_application_task(app: Application, body: DefineTask):
         app=app,
     )
     await task.insert()
-    await on_application_task_updated(task)
+    await notify_task_changed(task)
     return task
 
 
@@ -192,7 +185,7 @@ class TaskUpdate(AppBaseModel):
     description: Optional[str]
     tags: Optional[List[str]]
     body: Optional[TaskBody]
-    env: Optional[Dict[str, str]]
+    env: Optional[dict[str, str]]
     triggers: Optional[List[TaskTrigger]]
     display_name: Optional[str]
 
@@ -213,7 +206,7 @@ async def apply_application_task_update(
     )
     task.tags = task.tags if update.tags is None else update.tags
     await task.save_changes()
-    await on_application_task_updated(task)
+    await notify_task_changed(task)
     return task
 
 
@@ -239,13 +232,13 @@ class DefinedTask(DefineTask):
 
 class SyncResult(AppBaseModel):
     tasks: List[DefinedTask] = Field(default_factory=list)
-    errors: Dict[UUID, str] = Field(default_factory=dict)
+    errors: dict[UUID, str] = Field(default_factory=dict)
 
 
 async def sync_defined_tasks(
     app: Application, tasks: List[DefinedTask]
 ) -> SyncResult:
-    db_tasks: Dict[UUID, ApplicationTask] = {
+    db_tasks: dict[UUID, ApplicationTask] = {
         t.id: t
         for t in await ApplicationTask.not_deleted()
         .find(ApplicationTask.app_id == app.id)
@@ -313,7 +306,7 @@ async def sync_defined_tasks(
     return result
 
 
-async def on_application_task_updated(task: ApplicationTask):
+async def notify_task_changed(task: ApplicationTask):
     await get_channel_layer().group_send(
         CG.monitoring.app(task.app_id), "task", task
     )
@@ -322,112 +315,12 @@ async def on_application_task_updated(task: ApplicationTask):
     )
 
 
-class ApplicationClientInfo(AppBaseModel):
-    name: str
-    version: str
-    compatibility_key: str
-    os_info: str
-    connection_uuid: UUID
-    machine_id: str = Field(max_length=200)
-    instance_id: Optional[UUID]
-
-    def get_fingerprint(self):
-        return hashlib.sha256(
-            json.dumps(
-                [1, self.name, self.compatibility_key]
-            ).encode()  # 1 - fingerprint version
-        ).hexdigest()
-
-
-class TakenConnectionID(HTTPException):
-    def __init__(self):
-        super(TakenConnectionID, self).__init__(
-            409, "this connection id is already taken, chose another one"
-        )
-
-
-async def get_or_create_connection(
-    app_id: PydanticObjectId, info: ApplicationClientInfo, ip_address: str
-):
-    connection = await ConnectionInfo.find_one(
-        ConnectionInfo.id == info.connection_uuid
-    )
-
-    if connection is None:
-        connection = ConnectionInfo(
-            id=info.connection_uuid,
-            ip=ip_address,
-            client_name=info.name,
-            client_version=info.version,
-            app_id=app_id,
-            fingerprint=info.get_fingerprint(),
-            os=info.os_info,
-            is_connected=True,
-            machine_id=info.machine_id,
-            instance_id=info.instance_id,
-        )
-        await connection.insert()
-    else:
-        connection.is_connected = True
-        connection.machine_id = info.machine_id
-        connection.instance_id = info.instance_id
-        connection.os = info.os_info
-        connection.app_id = app_id
-        connection.client_name = info.name
-        connection.client_version = info.version
-        connection.fingerprint = info.get_fingerprint()
-        connection.ip = ip_address
-        await connection.save_changes()
-    await realtime.on_connection_info_changed(connection)
-    return connection
-
-
-async def on_connection_disconnected(connection: ConnectionInfo):
-    connection.is_connected = False
-    connection.expires_at = datetime.utcnow() + timedelta(hours=12)
-    connection.disconnected_at = datetime.utcnow()
-    await connection.save_changes()
-    await realtime.on_connection_info_changed(connection)
-
-
-async def set_sequences_frozen(
-    app_id: PydanticObjectId,
-    sequences_ids: List[PydanticObjectId],
-    frozen: bool,
-):
-    await EventSequence.find(In("_id", sequences_ids)).update(
-        {"frozen": frozen}
-    )
-    await realtime.on_sequences_updated(
-        app_id, sequences_ids, {"frozen": frozen}
-    )
-
-
-async def add_connection_subscription(connection_id: UUID, events: List[str]):
-    if len(events) == 0:
-        return
-    await ConnectionInfo.find({"_id": connection_id}).update(
-        {
-            "$addToSet": {
-                "event_subscriptions": events[0]
-                if len(events) == 1
-                else {"$each": events}
-            }
-        }
-    )
-
-
-async def remote_connection_subscription(
-    connection_id: UUID, events: List[str]
-):
-    if len(events) == 0:
-        return
-    await ConnectionInfo.find({"_id": connection_id}).update(
-        {
-            "$pull": {
-                "event_subscriptions": events[0]
-                if len(events) == 1
-                else {"$each": events}
-            }
-        }
+async def notify_connection_changed(connection: ConnectionInfo):
+    await get_channel_layer().groups_send(
+        [
+            CG.monitoring.app(connection.app_id),
+            CG.app(connection.app_id),
+        ],
+        "connection",
+        connection,
     )

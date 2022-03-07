@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from pydantic import Field
 
@@ -9,7 +9,7 @@ class TaskDescriptor(AppBaseModel):
     cmd: Optional[str]
     on_events: List[str]
     cron: Optional[str]
-    env: Dict[str, str]
+    env: dict[str, str]
     task_name: str
 
 

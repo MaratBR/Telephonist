@@ -84,7 +84,7 @@ class Connection(HubProxy):
             await self._backplane.detach_queue(_PREFIX + group, self._queue)
 
     def _send(self, msg_type: str, message: Any) -> Awaitable[None]:
-        return self._queue.put({"msg_type": msg_type, "data": message})
+        return self._queue.put({"t": msg_type, "d": message})
 
     async def queued_messages(self) -> AsyncIterable[dict]:
         assert self._active, "Connection is not active"
@@ -109,7 +109,7 @@ class ChannelLayer:
         if keep_alive_timeout.total_seconds() == 0:
             raise ValueError("Keep-alive timeout cannot be zero")
         self._backplane = backplane
-        self._connections: Dict[str, Connection] = {}
+        self._connections: dict[str, Connection] = {}
         self._ka_timeout = keep_alive_timeout
         self._id: str = nanoid.generate(size=10)
         self._internal_messages_task: Optional[asyncio.Task] = None
@@ -145,8 +145,8 @@ class ChannelLayer:
             pass
 
     async def _handle_internal_message(self, message: dict):
-        data = message["data"]
-        msg_type = message["msg_type"]
+        data = message["d"]
+        msg_type = message["t"]
         if msg_type == "disconnect_connection":
             connection_id = data.get("connection_id")
             if connection_id in self._connections:
@@ -184,8 +184,8 @@ class ChannelLayer:
             await self._backplane.publish(
                 "__internal:" + layer_id,
                 {
-                    "msg_type": "disconnect_connection",
-                    "data": {"connection_id": connection_id},
+                    "t": "disconnect_connection",
+                    "d": {"connection_id": connection_id},
                 },
             )
 
@@ -195,7 +195,7 @@ class ChannelLayer:
     async def groups_send(self, groups: List[str], msg_type: str, data: Any):
         await self._backplane.publish_many(
             [_PREFIX + g for g in groups],
-            {"msg_type": msg_type, "data": data},
+            {"t": msg_type, "d": data},
         )
 
     def _parse_id(self, connection_id: str):

@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Dict, Optional
+from typing import Optional
 
 import pymongo
 
@@ -37,7 +37,7 @@ class Periods(AppBaseModel):
 
 class Counters(AppBaseModel):
     periods: Periods
-    values: Dict[str, CountersValue]
+    values: dict[str, CountersValue]
 
 
 @register_model
@@ -54,7 +54,7 @@ class Counter(BaseDocument):
         counters = await cls.find(
             {"subject": {"$in": subjects}, "period": {"$in": list(periods)}}
         ).to_list()
-        result: Dict[str, CountersValue] = {}
+        result: dict[str, CountersValue] = {}
         for c in counters:
             cv = result.get(c.subject)
             if cv is None:

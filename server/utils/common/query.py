@@ -9,7 +9,7 @@ from server.models.common import AppBaseModel
 T = TypeVar("T", bound=AppBaseModel)
 
 
-def QueryDict(model: Type[T]) -> T:  # noqa
+def Querydict(model: Type[T]) -> T:  # noqa
     def query_dict_dependency(request: Request):
         try:
             return model(**request.query_params)

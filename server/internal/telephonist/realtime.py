@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Union
+from typing import Any, Union
 from uuid import UUID
 
 from beanie import PydanticObjectId
@@ -44,27 +44,6 @@ class EntryUpdate(AppBaseModel):
     id: Any
     entry_type: str
     entry: Any
-
-
-async def on_sequences_updated(
-    app_id: PydanticObjectId, sequences: List[PydanticObjectId], update: dict
-):
-    await get_channel_layer().group_send(
-        CG.monitoring.app(app_id),
-        "sequences",
-        {"sequences": sequences, "update": update},
-    )
-
-
-async def on_sequence_meta_updated(seq: EventSequence, meta: Dict[str, Any]):
-    await get_channel_layer().group_send(
-        CG.monitoring.app(seq.app_id),
-        "sequence_meta",
-        {
-            "id": seq.id,
-            "meta": meta,
-        },
-    )
 
 
 async def on_sequence_updated(seq: EventSequence):

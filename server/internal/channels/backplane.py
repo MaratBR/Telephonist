@@ -94,7 +94,7 @@ class InMemoryBackplane(BackplaneBase):
 
     def __init__(self):
         self._keys = {}
-        self._channels: Dict[str, List[asyncio.Queue]] = {}
+        self._channels: dict[str, List[asyncio.Queue]] = {}
 
     async def start(self):
         pass
@@ -171,7 +171,7 @@ class RedisBackplane(BackplaneBase):
 
     def __init__(self, redis: Redis):
         self._redis = redis
-        self._listeners: Dict[str, List[asyncio.Queue]] = {}
+        self._listeners: dict[str, List[asyncio.Queue]] = {}
         self._pubsub = self._redis.pubsub()
         self._receiver_task: Optional[asyncio.Task] = None
 
@@ -195,7 +195,7 @@ class RedisBackplane(BackplaneBase):
                 if message is None or message["type"] != "message":
                     continue
                 try:
-                    data = decode_object(message["data"])
+                    data = decode_object(message["d"])
                 except Exception as exc:
                     _logger.exception(str(exc))
                     continue  # TODO

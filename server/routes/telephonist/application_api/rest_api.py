@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, List
 from uuid import UUID
 
 from beanie import PydanticObjectId
@@ -137,7 +137,7 @@ async def create_sequence(
     sequence = await _internal.create_sequence(
         app.id, sequence, request.client.host
     )
-    await _internal.notify_sequence(sequence)
+    await _internal.notify_sequence_changed(sequence)
     return sequence
 
 
@@ -150,7 +150,7 @@ async def finish_sequence(
 ):
     sequence = await _internal.get_sequence(sequence_id, app.id)
     await _internal.finish_sequence(sequence, update, request.client.host)
-    await _internal.notify_sequence(sequence)
+    await _internal.notify_sequence_changed(sequence)
 
     return {"detail": "Sequence finished"}
 
@@ -159,7 +159,7 @@ async def finish_sequence(
 async def set_sequence_meta(
     sequence_id: PydanticObjectId,
     app=APPLICATION,
-    new_meta: Dict[str, Any] = Body(...),
+    new_meta: dict[str, Any] = Body(...),
 ):
     sequence = await _internal.get_sequence(sequence_id, app.id)
     await _internal.set_sequence_meta(sequence, new_meta)

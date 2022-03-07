@@ -123,8 +123,8 @@ class Hub:
     _connection: Optional[Connection]
     _channel_layer: ChannelLayer
     websocket: WebSocket
-    _static_handlers: ClassVar[Dict[str, str]]
-    _static_internal_event_listeners: ClassVar[Dict[str, str]]
+    _static_handlers: ClassVar[dict[str, str]]
+    _static_internal_event_listeners: ClassVar[dict[str, str]]
 
     @property
     def connection(self):
@@ -190,15 +190,13 @@ class Hub:
             assert isinstance(
                 json_obj, dict
             ), "Received message must be a JSON object"
-            assert (
-                "msg_type" in json_obj
-            ), 'Message object does not contain "msg_type" key'
+            assert "t" in json_obj, 'Message object does not contain "t" key'
             assert isinstance(
-                json_obj["msg_type"], str
+                json_obj["t"], str
             ), 'Raw message\'s "task_type" is not a string'
             message = {
-                "msg_type": json_obj["msg_type"],
-                "data": json_obj.get("data"),
+                "t": json_obj["t"],
+                "d": json_obj.get("d"),
             }
             return message
         except AssertionError as exc:
@@ -272,12 +270,10 @@ class Hub:
     async def _external_messages_loop(self):
         try:
             async for _channel, message in self._connection.queued_messages():
-                if message["msg_type"] == "__disconnect__":
+                if message["t"] == "__disconnect__":
                     await self.websocket.close()
                 else:
-                    await self.send_message(
-                        message["msg_type"], message["data"]
-                    )
+                    await self.send_message(message["t"], message["d"])
         except asyncio.CancelledError:
             pass
 
@@ -297,17 +293,17 @@ class Hub:
         """
         Dispatches incoming message to the appropriate handler withing hub.
 
-        :param message: message with keys - "msg_type" and "message"
+        :param message:
+            message with keys - "t" (for message type)
+            and "d" (for data).
         """
-        handler = self._local_handlers.get(message["msg_type"])
+        handler = self._local_handlers.get(message["t"])
         if handler:
             method = getattr(self, handler.method_name)
-            message_data = message["data"]
+            message_data = message["d"]
             if handler.typehint is not Any:
                 try:
-                    message_data = parse_obj_as(
-                        handler.typehint, message["data"]
-                    )
+                    message_data = parse_obj_as(handler.typehint, message["d"])
                 except ValidationError as exc:
                     await self.send_error(str(exc), "invalid_data")
                     return

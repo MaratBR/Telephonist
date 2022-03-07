@@ -3,7 +3,6 @@ from datetime import datetime
 from typing import (
     TYPE_CHECKING,
     ClassVar,
-    Dict,
     Generic,
     List,
     Optional,
@@ -25,7 +24,7 @@ T = TypeVar("T", bound="TokenModel")
 
 class TokenModel(AppBaseModel):
     __token_type__: ClassVar[str]
-    registry: ClassVar[Dict[str, Type["TokenModel"]]] = {}
+    registry: ClassVar[dict[str, Type["TokenModel"]]] = {}
     exp: datetime
     iat: datetime = Field(default_factory=datetime.utcnow)
     jti: str = Field(default_factory=nanoid.generate)

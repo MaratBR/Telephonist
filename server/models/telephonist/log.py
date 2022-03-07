@@ -24,7 +24,8 @@ class Severity(enum.IntEnum):
 class AppLog(BaseDocument):
     app_id: PydanticObjectId
     severity: Severity = Severity.UNKNOWN
-    body: Any
+    body: str
+    extra: Optional[dict[str, Any]]
     sequence_id: Optional[PydanticObjectId]
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

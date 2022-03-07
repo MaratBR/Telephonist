@@ -5,4 +5,4 @@ telephonist common
 например класс User, который может использоваться любыми другими модулями находится здесь.
 """
 
-from .query import QueryDict
+from .query import Querydict

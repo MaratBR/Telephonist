@@ -1,9 +1,9 @@
-from typing import Dict, Generic, Type, TypeVar
+from typing import Generic, Type, TypeVar
 
 TBound = TypeVar("TBound")
 
 
-class TypeRegistry(Generic[TBound], Dict[str, Type[TBound]]):
+class TypeRegistry(Generic[TBound], dict[str, Type[TBound]]):
     def register(self, key: str):
         def decorator(type_: Type[TBound]):
             self.set_or_raise(key, type_)

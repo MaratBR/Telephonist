@@ -13,7 +13,8 @@ from server.models.telephonist import AppLog, Severity
 class LogRecord(AppBaseModel):
     t: datetime
     severity: Severity
-    body: Any
+    body: str
+    extra: Optional[dict[str, Any]]
 
     _t_validator = validator("t", allow_reuse=True)(convert_to_utc)
 

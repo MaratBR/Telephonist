@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional, Set, Union
+from typing import Any, Optional, Set, Union
 from uuid import UUID
 
 from beanie import PydanticObjectId
@@ -101,11 +101,11 @@ async def apply_sequence_updates_on_event(event: Event):
     if seq.frozen:
         seq.frozen = False
         await seq.save_changes()
-        await notify_sequence(seq)
+        await notify_sequence_changed(seq)
 
 
 class SequenceDescriptor(AppBaseModel):
-    meta: Optional[Dict[str, Any]]
+    meta: Optional[dict[str, Any]]
     description: Optional[str]
     task_id: Optional[Union[UUID, str]]
     custom_name: Optional[str]
@@ -228,7 +228,7 @@ async def create_sequence(
             app_id=sequence.app_id,
         )
     )
-    await notify_sequence(sequence)
+    await notify_sequence_changed(sequence)
     return sequence
 
 
@@ -286,25 +286,25 @@ async def finish_sequence(
 
     # publish events and send updates to the clients
     await publish_events(*events)
-    await notify_sequence(sequence)
+    await notify_sequence_changed(sequence)
 
 
 async def set_sequence_meta(
-    sequence: EventSequence, new_meta: Dict[str, Any], replace: bool = False
+    sequence: EventSequence, new_meta: dict[str, Any], replace: bool = False
 ):
     if replace:
         sequence.meta = new_meta
     else:
         sequence.meta.update(new_meta)
     await sequence.save_changes()
-    await notify_sequence(sequence, {"meta"})
+    await notify_sequence_changed(sequence, {"meta"})
 
 
-async def notify_sequence(
+async def notify_sequence_changed(
     sequence: EventSequence, include: Optional[Set[str]] = None
 ):
     await get_channel_layer().group_send(
         CG.monitoring.app(sequence.app_id),
-        MSG_SEQUENCE,
+        "sequence",
         sequence.dict(by_alias=True, include=include),
     )
