@@ -14,7 +14,7 @@ class EnvSettings(BaseSettings):
     PORT: int = Field(default=5789, ge=1024, lt=32768)
 
     class Config:
-        env_prefix = "TELEPHONIST_PROD_"
+        env_prefix = "TELEPHONIST_"
 
 
 def main():

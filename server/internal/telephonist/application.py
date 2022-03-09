@@ -206,7 +206,6 @@ async def apply_application_task_update(
     )
     task.tags = task.tags if update.tags is None else update.tags
     await task.save_changes()
-    await notify_task_changed(task)
     return task
 
 

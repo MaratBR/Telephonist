@@ -76,6 +76,11 @@ class Counter(BaseDocument):
         return Counters(values=result, periods=periods)
 
     @classmethod
+    async def get_counter(cls, subject: str) -> CountersValue:
+        counters = await cls.get_counters({subject})
+        return counters.values[subject]
+
+    @classmethod
     async def inc_counter(
         cls, subject: str, value: int, periods: Optional[set[str]] = None
     ):

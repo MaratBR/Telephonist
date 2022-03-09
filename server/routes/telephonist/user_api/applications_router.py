@@ -11,7 +11,6 @@ from starlette.requests import Request
 import server.internal.telephonist.application as _internal
 from server.internal.auth.dependencies import AccessToken
 from server.internal.auth.token import UserTokenModel
-from server.internal.telephonist import realtime
 from server.internal.telephonist.utils import Errors, require_model_with_id
 from server.models.common import (
     AppBaseModel,
@@ -151,7 +150,8 @@ async def update_application(
     app.tags = app.tags if update.tags is None else update.tags
     if update.disabled is not None and update.disabled != app.disabled:
         if update.disabled:
-            await realtime.on_application_disabled(app.id, update.disabled)
+            # TODO send message to the application and to the user
+            pass
         app.disabled = update.disabled
     await app.save_changes()
     return ApplicationView(**app.dict(by_alias=True))

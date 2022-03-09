@@ -79,7 +79,7 @@ class Pagination:
     max_page_size: int = 1000
     min_page_size: int = 10
     default_page_size: int = 50
-    ordered_by_options: Set[str]
+    ordered_by_options: Set[str] = {"_id"}
     default_order_by: str = "_id"
     descending_by_default: bool = False
     use_order_by: bool = True

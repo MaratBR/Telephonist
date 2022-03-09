@@ -70,7 +70,8 @@ class ApplicationTask(SoftDeletes):
         return cls.find_one(
             {"_id": task_id_or_qname}
             if isinstance(task_id_or_qname, UUID)
-            else {"qualified_name": task_id_or_qname}
+            else {"qualified_name": task_id_or_qname},
+            cls.NOT_DELETED_COND,
         )
 
     @classmethod

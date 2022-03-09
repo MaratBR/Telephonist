@@ -62,8 +62,8 @@ def create_debug_app():
             f" cpu;dur={cpu_time * 1000}"
         )
         logger.debug(
-            f"{request.method} {request.url} -"
-            f" total={seconds_to_string(process_time)} cpu={seconds_to_string(cpu_time)}"
+            f"{request.method} {request.url} - "
+            f"total={seconds_to_string(process_time)} cpu={seconds_to_string(cpu_time)}"
         )
         return response
 

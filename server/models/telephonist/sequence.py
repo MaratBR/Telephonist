@@ -15,6 +15,7 @@ class EventSequenceState(str, enum.Enum):
     SUCCEEDED = "succeeded"
     SKIPPED = "skipped"
     IN_PROGRESS = "in_progress"
+    FROZEN = "frozen"
 
     @property
     def is_finished(self):
@@ -38,7 +39,6 @@ class EventSequence(BaseDocument):
     expires_at: datetime = Field(
         default_factory=lambda: datetime.now() + timedelta(days=3)
     )
-    frozen: bool = False
     error: Optional[str] = None
     connection_id: Optional[UUID]
 

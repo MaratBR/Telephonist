@@ -8,6 +8,7 @@ from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.middleware.cors import CORSMiddleware
+from starlette.websockets import WebSocket
 
 from server.database import init_database, shutdown_database
 from server.internal.channels import (
@@ -19,7 +20,6 @@ from server.internal.channels.backplane import BackplaneBase, RedisBackplane
 from server.routes import (
     application_api_router,
     auth_api_router,
-    public_api_router,
     user_api_router,
     ws_root_router,
 )
@@ -74,12 +74,12 @@ class TelephonistApp(FastAPI):
             raise
 
     def _init_routers(self):
-        self.include_router(public_api_router)
         self.include_router(auth_api_router)
         self.include_router(application_api_router)
         self.include_router(user_api_router)
         # see https://github.com/tiangolo/fastapi/pull/2640
-        # (when it's merged we can remove ws_root_router and replace it with something else)
+        # (when it's merged we can remove ws_root_router
+        # and replace it with something else)
         self.include_router(ws_root_router)
 
 
@@ -88,5 +88,14 @@ def create_app(
     backplane: Optional[BackplaneBase] = None,
 ):
     app = TelephonistApp(backplane=backplane, motor_client=motor_client)
+
+    # TODO REMOVE!!!
+    @app.websocket_route("/")
+    async def echo(ws: WebSocket):  # not really echo but whatever
+        await ws.accept()
+        while True:
+            msg = await ws.receive()
+            if msg and msg.get("type") == "websocket.disconnect":
+                break
 
     return app

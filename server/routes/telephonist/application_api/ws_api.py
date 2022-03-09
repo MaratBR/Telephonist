@@ -100,18 +100,6 @@ class AppReportHub(Hub):
         assert app is not None, "Application is None"
         return app
 
-    async def _send_connection(self):
-        await self.channel_layer.group_send(
-            CG.monitoring.app(self._app_id),
-            "entry_update",
-            {
-                "entry_name": "connection_info",
-                "id": self._connection_info.id,
-                "entry": self._connection_info,
-                "proto_version": 1,
-            },
-        )
-
     async def on_disconnected(self, exc: Exception = None):
         if self._connection_info is not None:
             self._connection_info = await ConnectionInfo.get(
@@ -140,7 +128,6 @@ class AppReportHub(Hub):
             self.websocket.client,
             None if message.os_info == "" else message.os_info,
         )
-        await self._send_connection()
         if message.subscriptions:
             await self.set_subscriptions(message.subscriptions)
         await self.connection.add_to_group(CG.app(self._app_id))

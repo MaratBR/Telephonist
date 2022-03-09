@@ -3,7 +3,14 @@ import logging
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from typing import *
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncContextManager,
+    AsyncIterable,
+    Awaitable,
+    Optional,
+)
 
 import nanoid
 
@@ -192,7 +199,7 @@ class ChannelLayer:
     def group_send(self, group: str, msg_type: str, data: Any):
         return self.groups_send([group], msg_type, data)
 
-    async def groups_send(self, groups: List[str], msg_type: str, data: Any):
+    async def groups_send(self, groups: list[str], msg_type: str, data: Any):
         await self._backplane.publish_many(
             [_PREFIX + g for g in groups],
             {"t": msg_type, "d": data},

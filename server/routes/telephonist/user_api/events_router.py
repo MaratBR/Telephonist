@@ -1,8 +1,9 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Union
 
 from beanie import PydanticObjectId
 from beanie.odm.enums import SortDirection
+from beanie.odm.operators.find.comparison import In
 from fastapi import APIRouter, Depends
 from fastapi_cache.decorator import cache
 from starlette.responses import Response
@@ -15,6 +16,7 @@ from server.models.telephonist import (
     ConnectionInfo,
     Event,
     EventSequence,
+    EventSequenceState,
 )
 from server.utils.common import Querydict
 
@@ -74,6 +76,32 @@ async def get_event(event_id: PydanticObjectId):
         await Event.get(event_id),
         message=f"Event with id={event_id} not found",
     )
+
+
+class SequencesPagination(Pagination):
+    max_page_size = 100
+
+
+class SequenceFilter(AppBaseModel):
+    app_id: Optional[PydanticObjectId]
+    state: Optional[Union[EventSequenceState, list[EventSequenceState]]]
+
+
+@events_router.get("/sequences")
+async def get_sequences(
+    pagination: SequencesPagination = Depends(),
+    query=Querydict(SequenceFilter),
+):
+    find = []
+    if query.app_id:
+        find.append(EventSequence.app_id == query.app_id)
+    if query.state:
+        if isinstance(query.state, list):
+            find.append(In("state", query.state))
+        else:
+            find.append(EventSequence.state == query.state)
+
+    return await pagination.paginate(EventSequence, filter_condition=find)
 
 
 @events_router.get("/sequences/{sequence_id}")

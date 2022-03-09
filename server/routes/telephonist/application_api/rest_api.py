@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any, List, Optional
 from uuid import UUID
 
 from beanie import PydanticObjectId
@@ -7,12 +7,29 @@ from fastapi import APIRouter, Body, HTTPException
 from starlette.requests import Request
 
 import server.internal.telephonist as _internal
-from server.internal.telephonist import realtime
+from server.internal.transit import dispatch
 from server.models.common import AppBaseModel
-from server.models.telephonist import ApplicationTask
+from server.models.telephonist import ApplicationTask, EventSequence
 from server.routes.telephonist.application_api._utils import APPLICATION
 
 rest_router = APIRouter(dependencies=[APPLICATION])
+
+
+async def get_sequence_or_404(
+    sequence_id: PydanticObjectId, app_id: Optional[PydanticObjectId] = None
+):
+    sequence = await EventSequence.get(sequence_id)
+    if sequence is None:
+        raise HTTPException(
+            404, f"Sequence with id = {sequence_id} does not exist"
+        )
+    if app_id and sequence.app_id != app_id:
+        raise HTTPException(
+            401,
+            f"Sequence with id = {sequence_id} does not belong to application"
+            f" with id = {app_id}",
+        )
+    return sequence
 
 
 @rest_router.get("/probe")
@@ -114,12 +131,12 @@ async def publish_event(
     app=APPLICATION,
     event_request: _internal.EventDescriptor = Body(...),
 ):
-    if realtime.is_reserved_event(event_request.name):
+    if _internal.is_reserved_event(event_request.name):
         raise HTTPException(
             422,
             f"event type '{event_request.name}' is reserved for internal use",
         )
-    event = await _internal.make_and_validate_event(
+    event = await _internal.create_event(
         app.id, event_request, request.client.host
     )
     await _internal.publish_events(event)
@@ -132,12 +149,19 @@ async def publish_event(
 async def create_sequence(
     request: Request,
     app=APPLICATION,
-    sequence: _internal.SequenceDescriptor = Body(...),
+    descriptor: _internal.SequenceDescriptor = Body(...),
 ):
-    sequence = await _internal.create_sequence(
-        app.id, sequence, request.client.host
+    sequence, start_event = await _internal.create_sequence_and_start_event(
+        app.id, descriptor, request.client.host
     )
-    await _internal.notify_sequence_changed(sequence)
+    await dispatch(
+        _internal.SequenceCreated(
+            sequence_id=sequence.id,
+            app_id=sequence.app_id,
+            task_id=sequence.task_id,
+        )
+    )
+    await _internal.notify_events(start_event)
     return sequence
 
 
@@ -148,10 +172,18 @@ async def finish_sequence(
     app=APPLICATION,
     update: _internal.FinishSequence = Body(...),
 ):
-    sequence = await _internal.get_sequence(sequence_id, app.id)
-    await _internal.finish_sequence(sequence, update, request.client.host)
-    await _internal.notify_sequence_changed(sequence)
-
+    sequence = await get_sequence_or_404(sequence_id, app.id)
+    events = await _internal.finish_sequence(
+        sequence, update, request.client.host
+    )
+    await _internal.notify_events(*events)
+    await dispatch(
+        _internal.SequenceFinished(
+            sequence_id=sequence.id,
+            app_id=sequence.app_id,
+            task_id=sequence.task_id,
+        )
+    )
     return {"detail": "Sequence finished"}
 
 
@@ -161,6 +193,6 @@ async def set_sequence_meta(
     app=APPLICATION,
     new_meta: dict[str, Any] = Body(...),
 ):
-    sequence = await _internal.get_sequence(sequence_id, app.id)
+    sequence = await get_sequence_or_404(sequence_id, app.id)
     await _internal.set_sequence_meta(sequence, new_meta)
     return {"detail": "Sequence's meta has been updated"}
