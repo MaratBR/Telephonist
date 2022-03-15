@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     mongodb_db_name: str = "telephonist"
     secret: str = "secret" * 5
     jwt_issuer: Optional[str] = "https://telephonist.io"
-    refresh_token_lifetime: timedelta = timedelta(days=30)
+    session_lifetime: timedelta = timedelta(days=30)
     rotate_refresh_token: bool = True
     redis_url: Optional[str] = "redis://127.0.0.1:6379"
     db_url: Optional[str] = "mongodb://127.0.0.1:27017"

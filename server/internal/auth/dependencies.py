@@ -1,87 +1,58 @@
-import hashlib
-from typing import Optional, Type, Union
+from http.client import HTTPException
+from typing import Optional
 
-from fastapi import Cookie, Depends, params
+from fastapi import Depends
+from pydantic import ValidationError
+from starlette.status import HTTP_403_FORBIDDEN
 
-from server.models.auth import BlockedAccessToken, User
+from server.models.auth import User
 
-from .exceptions import AuthError, InvalidToken, UserNotFound
-from .schema import JWT_CHECK_HASH_COOKIE, bearer, require_bearer
-from .token import TokenModel, UserTokenModel
+from .exceptions import AuthError, UserNotFound
+from .sessions import UserSession, get_session_manager, session_cookie
 
 
-def _require_user_token(
-    check_string: Optional[str] = Cookie(None, alias=JWT_CHECK_HASH_COOKIE),
-    jwt: str = Depends(require_bearer),
+def require_session_cookie(session_id: str = Depends(session_cookie)):
+    if session_id is None:
+        raise HTTPException(HTTP_403_FORBIDDEN, "missing session_cookie id")
+    return session_id
+
+
+async def get_session(
+    session_id: str = Depends(session_cookie),
+) -> Optional[UserSession]:
+    return await get_session_manager().get(session_id, UserSession)
+
+
+async def require_session(
+    session_id: str = Depends(require_session_cookie),
 ):
-    token = UserTokenModel.decode(jwt)
-    if token.check_string:
-        if (
-            check_string is None
-            or token.check_string
-            != hashlib.sha256(check_string.encode()).hexdigest()
-        ):
-            raise InvalidToken(
-                "jwt token check string is invalid or check string cookie"
-                f' ("{JWT_CHECK_HASH_COOKIE}) is missing'
-            )
-    return token
+    data = await get_session_manager().get(session_id)
+    if data is None:
+        raise HTTPException(401, "invalid or expired session_cookie")
+    return data
 
 
-def _get_user_token(
-    check_string: Optional[str] = Cookie(None, alias=JWT_CHECK_HASH_COOKIE),
-    jwt: str = Depends(bearer),
-):
-    if jwt is None:
-        return None
-    try:
-        return _require_user_token(check_string, jwt)
-    except InvalidToken:
-        return None
-
-
-def AccessToken(  # noqa N802
-    required: bool = True,
-) -> Union[params.Depends, UserTokenModel]:
-    return Depends(_require_user_token if required else _get_user_token)
-
-
-def Token(token_model: Type[TokenModel], required: bool = True):  # noqa: N802
-    if required:
-
-        def dependency_function(token: Optional[str] = Depends(bearer)):
-            return token_model.decode(token)
-
-    else:
-
-        def dependency_function(token: Optional[str] = Depends(bearer)):
-            try:
-                return token_model.decode(token)
-            except AuthError:
-                return None
-
-    return Depends(dependency_function)
-
-
-async def _require_current_user(token: UserTokenModel = AccessToken()) -> User:
-    if await BlockedAccessToken.is_blocked(token.jti):
-        raise AuthError("This token has been revoked")
-    user = await User.get(token.sub)
+async def _require_current_user(
+    session: UserSession = Depends(require_session),
+) -> User:
+    user = await User.get(session.user_id)
     if user is None:
         raise UserNotFound()
     return user
 
 
 async def _current_user(
-    token: UserTokenModel = AccessToken(),
+    session: UserSession = Depends(get_session),
 ) -> Optional[User]:
-    try:
-        return await _require_current_user(token)
-    except AuthError:
-        return None
+    if session:
+        try:
+            return await _require_current_user(session)
+        except AuthError:
+            return None
+    return None
 
 
-def CurrentUser(required: bool = True):  # noqa
+def CurrentUser(required: bool = True) -> User:  # noqa
     get = _require_current_user
     if not required:
         get = _current_user

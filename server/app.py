@@ -11,17 +11,21 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocket
 
 from server.database import init_database, shutdown_database
+from server.internal.auth.sessions import init_redis_sessions
 from server.internal.channels import (
     get_channel_layer,
     start_backplane,
     stop_backplane,
 )
-from server.internal.channels.backplane import BackplaneBase, RedisBackplane, get_backplane
+from server.internal.channels.backplane import (
+    BackplaneBase,
+    RedisBackplane,
+    get_backplane,
+)
 from server.routes import (
     application_api_router,
     auth_api_router,
-    user_api_router,
-    ws_root_router,
+    ws_root_router, user_api_application,
 )
 from server.settings import settings
 
@@ -59,6 +63,7 @@ class TelephonistApp(FastAPI):
                 self._backplane
                 or RedisBackplane(aioredis.from_url(settings.redis_url))
             )
+            init_redis_sessions(aioredis.from_url(settings.redis_url))
             await get_channel_layer().start()
         except Exception as exc:
             self.logger.exception(str(exc))
@@ -74,9 +79,10 @@ class TelephonistApp(FastAPI):
             raise
 
     def _init_routers(self):
+        self.mount("/user-api", user_api_application)
+
         self.include_router(auth_api_router)
         self.include_router(application_api_router)
-        self.include_router(user_api_router)
         # see https://github.com/tiangolo/fastapi/pull/2640
         # (when it's merged we can remove ws_root_router
         # and replace it with something else)
@@ -85,14 +91,16 @@ class TelephonistApp(FastAPI):
         self.add_api_route("/hc", self._health_check)
 
     async def _health_check(self):
-        return ORJSONResponse({
-            "modules": {
-                "database": "?",
-                "backplane": {
-                    "type": type(get_backplane()).__name__,
+        return ORJSONResponse(
+            {
+                "modules": {
+                    "database": "?",
+                    "backplane": {
+                        "type": type(get_backplane()).__name__,
+                    },
                 }
             }
-        })
+        )
 
 
 def create_app(

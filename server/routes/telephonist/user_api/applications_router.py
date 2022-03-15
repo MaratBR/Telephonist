@@ -5,12 +5,10 @@ import fastapi
 from beanie import PydanticObjectId
 from beanie.odm.enums import SortDirection
 from bson.errors import InvalidId
-from fastapi import Body, Depends, HTTPException, Query, params
+from fastapi import Body, Depends, HTTPException, Query
 from starlette.requests import Request
 
 import server.internal.telephonist.application as _internal
-from server.internal.auth.dependencies import AccessToken
-from server.internal.auth.token import UserTokenModel
 from server.internal.telephonist.utils import Errors, require_model_with_id
 from server.models.common import (
     AppBaseModel,
@@ -31,7 +29,6 @@ from server.models.telephonist import (
 )
 
 _APPLICATION_NOT_FOUND = "Application not found"
-TOKEN: Union[params.Depends, UserTokenModel] = AccessToken()
 
 
 async def _get_application(
@@ -58,7 +55,6 @@ class ApplicationsPagination(Pagination):
 @applications_router.get(
     "",
     responses={200: {"model": PaginationResult[ApplicationView]}},
-    dependencies=[AccessToken()],
 )
 async def get_applications(
     args: ApplicationsPagination = Depends(),
@@ -69,9 +65,7 @@ async def get_applications(
 @applications_router.post(
     "", status_code=201, responses={201: {"model": IdProjection}}
 )
-async def create_application(
-    _=AccessToken(), body: _internal.CreateApplication = Body(...)
-):
+async def create_application(body: _internal.CreateApplication = Body(...)):
     app = await _internal.create_new_application(body)
     return ApplicationView(**app.dict(by_alias=True))
 
@@ -134,7 +128,7 @@ async def get_application(app_id_or_name: str):
     }
 
 
-@applications_router.patch("/{app_id}", dependencies=[AccessToken()])
+@applications_router.patch("/{app_id}")
 async def update_application(
     app_id: PydanticObjectId, update: _internal.ApplicationUpdate = Body(...)
 ):
@@ -161,7 +155,6 @@ async def update_application(
 async def get_app_logs(
     app_id: PydanticObjectId,
     before: Optional[datetime] = None,
-    _=AccessToken(),
 ):
     await require_model_with_id(
         Application, app_id, message=f"Application with id={app_id} not found"
@@ -254,9 +247,7 @@ async def get_application_tasks(
     )
 
 
-@applications_router.post(
-    "/{app_ident}/defined-tasks", dependencies=[AccessToken()]
-)
+@applications_router.post("/{app_ident}/defined-tasks")
 async def define_application_task(
     app_ident: str, body: _internal.DefineTask = Body(...)
 ):

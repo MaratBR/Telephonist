@@ -1,8 +1,9 @@
 from beanie.odm.enums import SortDirection
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, FastAPI
 
 from server.database import get_database
-from server.internal.auth.dependencies import AccessToken
+from server.internal.auth.dependencies import require_session
+from server.internal.auth.sessions import validate_csrf_token
 from server.models.telephonist import (
     Application,
     AppLog,
@@ -19,18 +20,16 @@ from server.routes.telephonist.user_api.logs_router import logs_router
 from server.routes.telephonist.user_api.tasks_router import tasks_router
 from server.routes.telephonist.user_api.ws_router import ws_router
 
-user_api_router = APIRouter(
-    prefix="/user-api", tags=["user-api"], dependencies=[AccessToken()]
-)
+user_api_application = FastAPI(dependencies=[Depends(require_session), Depends(validate_csrf_token)],)
 
-user_api_router.include_router(applications_router)
-user_api_router.include_router(events_router)
-user_api_router.include_router(tasks_router)
-user_api_router.include_router(logs_router)
-user_api_router.include_router(ws_router, prefix="/ws")
+user_api_application.include_router(applications_router)
+user_api_application.include_router(events_router)
+user_api_application.include_router(tasks_router)
+user_api_application.include_router(logs_router)
+user_api_application.include_router(ws_router, prefix="/ws")
 
 
-@user_api_router.get("/status")
+@user_api_application.get("/status")
 async def get_stats():
     db = get_database()
     db_stats = await db.command("dbStats")

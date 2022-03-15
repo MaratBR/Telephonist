@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends
 
-from server.internal.auth.dependencies import AccessToken
 from server.models.auth import User, UserView
 from server.models.common import Pagination
 
@@ -11,6 +10,6 @@ class UsersPagination(Pagination):
     ordered_by_options = {"username", "_id"}
 
 
-@users_router.get("", dependencies=[AccessToken()])
+@users_router.get("")
 async def get_users(args: UsersPagination = Depends()):
     return await args.paginate(User, UserView)

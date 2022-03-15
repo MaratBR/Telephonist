@@ -19,7 +19,7 @@ settings.db_url = f"mongodb://localhost:{MONGODB_PORT}"
 settings.is_testing = True
 
 
-@pytest.yield_fixture(scope="session")
+@pytest.yield_fixture(scope="session_cookie")
 def mongodb_server():
     r = subprocess.run(["mongod", "--help"], capture_output=True)
     assert r.returncode == 0, "mongod executable is not available"
@@ -53,12 +53,12 @@ def create_test_app():
     return app
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session_cookie")
 def client_no_init(mongodb_server):
     return TestClient(create_test_app())
 
 
-@pytest.yield_fixture(scope="session")
+@pytest.yield_fixture(scope="session_cookie")
 def client(client_no_init: TestClient):
     with client_no_init:
         yield client_no_init

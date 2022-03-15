@@ -1,10 +1,11 @@
 from datetime import datetime, timedelta
 from typing import List, Set, Union
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from server import VERSION
-from server.internal.auth.dependencies import AccessToken
+from server.internal.auth.dependencies import get_session
+from server.internal.auth.sessions import UserSession
 from server.internal.channels import WSTicket, WSTicketModel
 from server.internal.channels.hub import Hub, bind_message, ws_controller
 from server.internal.telephonist import CG
@@ -15,10 +16,10 @@ ws_router = APIRouter()
 
 
 @ws_router.get("/issue-ws-ticket")
-async def issue_user_ws_ticket(token=AccessToken()):
+async def issue_user_ws_ticket(token: UserSession = Depends(get_session)):
     exp = datetime.now() + timedelta(minutes=5)
     return {
-        "ticket": WSTicketModel[User](exp=exp, sub=token.sub).encode(),
+        "ticket": WSTicketModel[User](exp=exp, sub=token.user_id).encode(),
         "exp": exp,
     }
 

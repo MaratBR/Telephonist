@@ -1,21 +1,15 @@
-import base64
 import hashlib
 from datetime import datetime, timedelta
-from typing import Optional, Tuple, Union
+from typing import Optional, Union
 
 from beanie import Document, PydanticObjectId
-from beanie.operators import Eq
 from pydantic import EmailStr, Field, root_validator
 from starlette.datastructures import Address
 from starlette.requests import Request
 
 from server.database import register_model
 from server.internal.auth.token import UserTokenModel
-from server.internal.auth.utils import (
-    create_static_key,
-    hash_password,
-    verify_password,
-)
+from server.internal.auth.utils import hash_password, verify_password
 from server.models.common import AppBaseModel
 from server.settings import settings
 
@@ -132,71 +126,6 @@ class UserView(AppBaseModel):
     def _root_validator(cls, value: dict) -> dict:
         value["created_at"] = value["id"].generation_time
         return value
-
-
-@register_model
-class BlockedAccessToken(Document):
-    id: str
-    blocked_at: datetime = Field(default_factory=datetime.utcnow)
-
-    @classmethod
-    async def block(cls, token_id: str):
-        if await cls.is_blocked(token_id):
-            return
-        blocked_token = cls(id=token_id)
-        await blocked_token.save()
-
-    @classmethod
-    async def is_blocked(cls, token_id: str) -> bool:
-        return await cls.find(cls.id == token_id).count() > 0
-
-
-@register_model
-class RefreshToken(Document):
-    id: str
-    expiration_date: datetime
-    blocked: bool = False
-    last_used: Optional[datetime] = None
-    user_id: PydanticObjectId
-
-    @classmethod
-    async def is_blocked(cls, token: str) -> bool:
-        return await cls.find(cls.id == cls._make_token_id(token)).count() > 0
-
-    @classmethod
-    async def delete_token(cls, token: str):
-        await cls.find(cls.id == cls._make_token_id(token)).delete()
-
-    @classmethod
-    async def find_valid(cls, token: str) -> Optional["RefreshToken"]:
-        return await cls.find_one(
-            cls.id == cls._make_token_id(token),
-            Eq(cls.blocked, False),
-            cls.expiration_date > datetime.now(),
-        )
-
-    @classmethod
-    async def create_token(
-        cls, user: User, lifetime: timedelta
-    ) -> Tuple["RefreshToken", str]:
-        token = create_static_key(40)
-        refresh_token = cls(
-            user_id=user.id,
-            expiration_date=datetime.utcnow() + lifetime,
-            id=cls._make_token_id(token),
-        )
-        await refresh_token.save()
-        return refresh_token, token
-
-    def matches(self, token: str):
-        return self.id == base64.urlsafe_b64encode(
-            hashlib.sha256(token).digest()
-        )[:43].decode("ascii")
-
-    @staticmethod
-    def _make_token_id(token: str):
-        digest = hashlib.sha256(token.encode("ascii")).digest()
-        return base64.urlsafe_b64encode(digest)[:43].decode("ascii")
 
 
 @register_model

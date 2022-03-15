@@ -2,10 +2,19 @@ import asyncio
 import inspect
 import logging
 from json import JSONDecodeError
-from typing import *
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    List,
+    NamedTuple,
+    Optional,
+    Type,
+    get_type_hints,
+)
 
 from fastapi import APIRouter
-from pydantic import ValidationError, parse_obj_as, Field
+from pydantic import Field, ValidationError, parse_obj_as
 from pydantic.typing import is_classvar
 from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 
@@ -98,13 +107,17 @@ class HandlerInfo(NamedTuple):
         return cls(
             typehint=cls._get_argument_type(method.member),
             message_type=method.metadata,
-            method_name=method.name
+            method_name=method.name,
         )
 
 
 class HubMessage(AppBaseModel):
     data: Any = Field(alias="d")
     msg_type: str = Field(alias="t")
+
+
+class OHubMessage(HubMessage):
+    topic: Optional[str]
 
 
 class Hub:
@@ -240,9 +253,10 @@ class Hub:
                     await self.websocket.close()
                 elif message["type"] == "message":
                     await self.websocket.send_text(
-                        HubMessage(
+                        OHubMessage(
                             t=message["message"]["type"],
                             d=message["message"]["data"],
+                            topic=message.get("group"),
                         ).json()
                     )
                 elif message["type"] == "event":

@@ -16,10 +16,7 @@ from typing import (
 import nanoid
 from pydantic import BaseModel
 
-from server.internal.channels.backplane import (
-    BackplaneBase,
-    get_backplane,
-)
+from server.internal.channels.backplane import BackplaneBase, get_backplane
 from server.models.common import AppBaseModel
 
 _PREFIX = "cl/"
@@ -85,9 +82,16 @@ class Connection(HubProxy):
         channel, data = item
 
         if channel.startswith(_PREFIX_MESSAGE):
-            return {"type": "message", "message": data, "group": channel[len(_PREFIX_MESSAGE):]}
+            return {
+                "type": "message",
+                "message": data,
+                "group": channel[len(_PREFIX_MESSAGE) :],
+            }
         elif channel.startswith(_PREFIX_EVENT):
-            return {"type": "event", "event": {"name": channel[len(_PREFIX_EVENT):], "data": data}}
+            return {
+                "type": "event",
+                "event": {"name": channel[len(_PREFIX_EVENT) :], "data": data},
+            }
         else:
             return None
 
@@ -259,7 +263,5 @@ _channel_layer: Optional[ChannelLayer] = None
 def get_channel_layer():
     global _channel_layer
     if _channel_layer is None:
-        _channel_layer = ChannelLayer(
-            timedelta(minutes=1), get_backplane()
-        )
+        _channel_layer = ChannelLayer(timedelta(minutes=1), get_backplane())
     return _channel_layer

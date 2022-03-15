@@ -12,7 +12,8 @@ from server.internal.channels import WSTicket, WSTicketModel
 from server.internal.channels.hub import (
     Hub,
     HubAuthenticationException,
-    ws_controller, bind_message,
+    bind_message,
+    ws_controller,
 )
 from server.internal.telephonist.utils import CG
 from server.models.common import AppBaseModel
