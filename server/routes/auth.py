@@ -65,7 +65,11 @@ async def login_user(credentials: HybridLoginData, request: Request):
             exp = datetime.now() + timedelta(minutes=10)
             password_token = PasswordResetToken(sub=user.id, exp=exp).encode()
             response = TokenResponse(
-                None, None, password_reset_token=password_token, token_exp=exp
+                user.id,
+                None,
+                None,
+                password_reset_token=password_token,
+                token_exp=exp,
             )
             await AuthLog.log(
                 "password-reset-login",
@@ -82,6 +86,7 @@ async def login_user(credentials: HybridLoginData, request: Request):
             )
             ttl = timedelta(hours=12)
             response = TokenResponse(
+                user.id,
                 user.create_token(ttl, check_string=check_string).encode(),
                 refresh_token,
                 refresh_cookie_path=request.scope["router"].url_path_for(

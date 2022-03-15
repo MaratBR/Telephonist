@@ -6,6 +6,7 @@ import time
 from starlette.requests import Request
 
 from server.app import create_app
+from server.internal.channels.backplane import InMemoryBackplane
 
 
 def _debug_init():
@@ -45,7 +46,7 @@ def seconds_to_string(seconds: float):
 
 
 def create_debug_app():
-    app = create_app()
+    app = create_app(backplane=InMemoryBackplane())
     _debug_init()
 
     logger = logging.getLogger("telephonist.debug")

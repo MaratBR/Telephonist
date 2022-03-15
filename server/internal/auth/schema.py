@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
+from beanie import PydanticObjectId
 from fastapi import Depends, Header
 from fastapi.security import HTTPBasic, HTTPBearer
 from fastapi.security.utils import get_authorization_scheme_param
@@ -23,6 +24,7 @@ class HybridLoginData(AppBaseModel):
 class TokenResponse(JSONResponse):
     def __init__(
         self,
+        user_id: PydanticObjectId,
         token: Optional[str],
         refresh_token: Optional[str],
         password_reset_token: str = None,
@@ -33,6 +35,7 @@ class TokenResponse(JSONResponse):
     ):
         super(TokenResponse, self).__init__(
             {
+                "user_id": str(user_id),
                 "access_token": token,
                 "exp": token_exp.isoformat() if token_exp else None,
                 "refresh_token": None if refresh_as_cookie else refresh_token,

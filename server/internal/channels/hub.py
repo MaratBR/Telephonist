@@ -5,7 +5,7 @@ from json import JSONDecodeError
 from typing import *
 
 from fastapi import APIRouter
-from pydantic import ValidationError, parse_obj_as
+from pydantic import ValidationError, parse_obj_as, Field
 from pydantic.typing import is_classvar
 from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 
@@ -15,6 +15,7 @@ from server.internal.channels.layer import (
     get_channel_layer,
 )
 from server.models.common import AppBaseModel
+from server.utils.annotations import AnnotatedMember, create_annotation
 
 WS_CBV_KEY = "__ws_cbv_class__"
 WS_CBV_CALL_NAME = "__ws_cbv_call__"
@@ -66,65 +67,56 @@ def add_ws_controller(
     router.add_api_websocket_route(path, caller, name=name)
 
 
-def bind_layer_event(internal_event: str):
-    def decorator(fn):
-        if hasattr(fn, WS_CBV_INTERNAL_EVENTS):
-            getattr(fn, WS_CBV_INTERNAL_EVENTS).add(internal_event)
-        else:
-            setattr(fn, WS_CBV_INTERNAL_EVENTS, {internal_event})
-        return fn
-
-    return decorator
+bind_event = create_annotation(str, "bind_event")
+bind_message = create_annotation(str, "bind_message")
 
 
-def bind_message(msg_type: Optional[str] = None):
-    if msg_type is not None and not isinstance(msg_type, str):
-        raise TypeError("msg_type must be a string or None")
+class HandlerInfo(NamedTuple):
+    typehint: Optional[Any]
+    message_type: str
+    method_name: str
 
-    def decorator(fn):
-        nonlocal msg_type
-        if msg_type is None:
-            if fn.__name__.startswith("on_"):
-                msg_type = fn.__name__[3:]
-            else:
-                msg_type = fn.__name__
-        sig = inspect.signature(fn)
-        params = sig.parameters.copy()
-        if "self" in params:
-            del params["self"]
+    @staticmethod
+    def _get_argument_type(f):
+        sig = inspect.signature(f)
         message_params = [
-            p for p in params.values() if p.default is inspect.Parameter.empty
+            p
+            for p in sig.parameters.values()
+            if p.default is inspect.Parameter.empty and p.name != "self"
         ]
         if len(message_params) > 1:
             raise TypeError(
-                "Invalid message handler signature - only one or zero"
-                " parameters without default value allowed"
+                "Invalid signature - only one or zero parameters without"
+                " default value allowed"
             )
         if len(message_params) == 0:
-            typehint = None
-        else:
-            typehint = message_params[0].annotation or Any
-        setattr(
-            fn,
-            WS_CBV_MESSAGE_HANDLER,
-            HubHandlerMeta(msg_type=msg_type, typehint=typehint),
-        )
-        return fn
+            return None
+        return message_params[0]
 
-    return decorator
+    @classmethod
+    def from_method(cls, method: AnnotatedMember[str]):
+        return cls(
+            typehint=cls._get_argument_type(method.member),
+            message_type=method.metadata,
+            method_name=method.name
+        )
 
 
 class HubMessage(AppBaseModel):
-    data: Any
-    msg_type: str
+    data: Any = Field(alias="d")
+    msg_type: str = Field(alias="t")
 
 
 class Hub:
     _connection: Optional[Connection]
     _channel_layer: ChannelLayer
     websocket: WebSocket
-    _static_handlers: ClassVar[dict[str, str]]
-    _static_internal_event_listeners: ClassVar[dict[str, str]]
+
+    """
+    handlers for messages defined with bind_message
+    """
+    _message_handlers: ClassVar[dict[str, HandlerInfo]]
+    _static_event_handlers: ClassVar[dict[str, HandlerInfo]]
 
     @property
     def connection(self):
@@ -135,39 +127,16 @@ class Hub:
         return self._channel_layer
 
     def __init__(self):
-        self._local_handlers = self._static_handlers.copy()
         self._connection = None
 
     def __init_subclass__(cls, **kwargs):
-        methods = inspect.getmembers(
-            cls,
-            lambda m: inspect.isfunction(m)
-            and hasattr(m, WS_CBV_MESSAGE_HANDLER),
-        )
-        handlers = {}
-        for method_name, method in methods:
-            meta: HubHandlerMeta = getattr(method, WS_CBV_MESSAGE_HANDLER)
-            handlers[meta.msg_type] = HubHandlerCache(
-                typehint=meta.typehint, method_name=method_name
-            )
-        cls._static_handlers = handlers
-
-        methods = inspect.getmembers(
-            cls,
-            lambda m: inspect.isfunction(m)
-            and hasattr(m, WS_CBV_INTERNAL_EVENTS),
-        )
-        event_handlers = {}
-        for method_name, method in methods:
-            events: Set[str] = getattr(method, WS_CBV_INTERNAL_EVENTS)
-            assert isinstance(events, set)
-            for event in events:
-                if event in event_handlers:
-                    _logger.warning(
-                        'overriding event "%s" in %s', event, cls.__name__
-                    )
-                event_handlers[event] = method_name
-        cls._static_internal_event_listeners = event_handlers
+        cls._message_handlers = {
+            m.name: HandlerInfo.from_method(m)
+            for m in bind_message.methods(cls)
+        }
+        cls._static_event_handlers = {
+            m.name: HandlerInfo.from_method(m) for m in bind_event.methods(cls)
+        }
 
     async def on_exception(self, exception: Exception):
         """
@@ -177,11 +146,12 @@ class Hub:
         await self.send_error(exception, kind="internal")
         _logger.exception(str(exception))
 
-    async def read_message(self) -> dict:
+    async def read_message(self) -> HubMessage:
         try:
             json_obj = await self.websocket.receive_json()
         except AssertionError:
             # TODO ????
+            # not sure what to do here and also don't remember why is this here
             raise WebSocketDisconnect()
         except JSONDecodeError:
             raise InvalidMessageException("invalid message format")
@@ -190,22 +160,12 @@ class Hub:
             assert isinstance(
                 json_obj, dict
             ), "Received message must be a JSON object"
-            assert "t" in json_obj, 'Message object does not contain "t" key'
-            assert isinstance(
-                json_obj["t"], str
-            ), 'Raw message\'s "task_type" is not a string'
-            message = {
-                "t": json_obj["t"],
-                "d": json_obj.get("d"),
-            }
-            return message
-        except AssertionError as exc:
+            return HubMessage(**json_obj)
+        except (AssertionError, ValidationError) as exc:
             raise InvalidMessageException(str(exc))
 
     async def send_message(self, msg_type: str, data: Any):
-        message = HubMessage(msg_type=msg_type, data=data)
-        raw = message.json(by_alias=True)
-        await self.websocket.send_text(raw)
+        await self.connection.send(msg_type, data)
 
     async def send_error(self, error: Any, kind: Optional[str] = None):
         """
@@ -221,7 +181,7 @@ class Hub:
             }
         else:
             error_object = {"error_type": kind or "custom", "error": error}
-        await self.send_message("error", error_object)
+        await self.connection.send("error", error_object)
 
     async def authenticate(self):
         pass
@@ -231,6 +191,10 @@ class Hub:
 
     async def on_disconnected(self, exc: Exception = None):
         pass
+
+    async def _subscribe_to_events(self):
+        for method_name, info in self._static_event_handlers.items():
+            pass
 
     async def _run(self):
         if self.websocket.application_state == WebSocketState.DISCONNECTED:
@@ -246,6 +210,8 @@ class Hub:
             return
 
         await self.websocket.accept()
+        await self._subscribe_to_events()
+
         # create new connection and star listening for incoming messages
         async with self.channel_layer.new_connection() as connection:
             self._connection = connection
@@ -261,21 +227,61 @@ class Hub:
                 await self.on_disconnected(exc)
 
     async def _main_loop(self):
-        task = asyncio.create_task(self._external_messages_loop())
+        task = asyncio.create_task(self._messages_loop())
         try:
             await self._receiver_loop()
         finally:
             task.cancel()
 
-    async def _external_messages_loop(self):
+    async def _messages_loop(self):
         try:
-            async for _channel, message in self._connection.queued_messages():
-                if message["t"] == "__disconnect__":
+            async for message in self._connection.queued_messages():
+                if message["type"] == "disconnect":
                     await self.websocket.close()
+                elif message["type"] == "message":
+                    await self.websocket.send_text(
+                        HubMessage(
+                            t=message["message"]["type"],
+                            d=message["message"]["data"],
+                        ).json()
+                    )
+                elif message["type"] == "event":
+                    await self._handle_event(message["event"])
                 else:
-                    await self.send_message(message["t"], message["d"])
+                    _logger.warning(
+                        "Received unknown message from the connection"
+                        f" object's message queue: {message}"
+                    )
         except asyncio.CancelledError:
             pass
+
+    async def _handle_message(self, message: HubMessage):
+        """
+        Dispatches incoming message to the appropriate handler within the hub.
+        """
+        handler = self._message_handlers.get(message.msg_type)
+        if handler:
+            await self._call_handler(handler, message.data)
+
+    async def _handle_event(self, event: dict):
+        handler = self._static_event_handlers.get(event["name"])
+        if handler:
+            await self._call_handler(handler, event["data"])
+
+    async def _call_handler(self, info: HandlerInfo, arg: Any):
+        method = getattr(self, info.method_name)
+        if info.typehint is not Any:
+            try:
+                message_data = parse_obj_as(info.typehint, arg)
+            except ValidationError as exc:
+                await self.send_error(str(exc), "invalid_data")
+                return
+        else:
+            message_data = arg
+        try:
+            await _call_method(method, message_data)
+        except Exception as exc:
+            await self.on_exception(exc)
 
     async def _receiver_loop(self):
         while True:
@@ -285,32 +291,9 @@ class Hub:
             try:
                 message = await self.read_message()
             except InvalidMessageException as err:
-                # await self.send_error(err)
+                await self.send_error(err)
                 continue
-            await self._dispatch_message(message)
-
-    async def _dispatch_message(self, message: dict):
-        """
-        Dispatches incoming message to the appropriate handler withing hub.
-
-        :param message:
-            message with keys - "t" (for message type)
-            and "d" (for data).
-        """
-        handler = self._local_handlers.get(message["t"])
-        if handler:
-            method = getattr(self, handler.method_name)
-            message_data = message["d"]
-            if handler.typehint is not Any:
-                try:
-                    message_data = parse_obj_as(handler.typehint, message["d"])
-                except ValidationError as exc:
-                    await self.send_error(str(exc), "invalid_data")
-                    return
-            try:
-                await _call_method(method, message_data)
-            except Exception as exc:
-                await self.on_exception(exc)
+            await self._handle_message(message)
 
 
 async def _call_method(method, *args, **kwargs):

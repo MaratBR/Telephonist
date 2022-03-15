@@ -16,7 +16,7 @@ from server.internal.channels import (
     start_backplane,
     stop_backplane,
 )
-from server.internal.channels.backplane import BackplaneBase, RedisBackplane
+from server.internal.channels.backplane import BackplaneBase, RedisBackplane, get_backplane
 from server.routes import (
     application_api_router,
     auth_api_router,
@@ -81,6 +81,18 @@ class TelephonistApp(FastAPI):
         # (when it's merged we can remove ws_root_router
         # and replace it with something else)
         self.include_router(ws_root_router)
+
+        self.add_api_route("/hc", self._health_check)
+
+    async def _health_check(self):
+        return ORJSONResponse({
+            "modules": {
+                "database": "?",
+                "backplane": {
+                    "type": type(get_backplane()).__name__,
+                }
+            }
+        })
 
 
 def create_app(

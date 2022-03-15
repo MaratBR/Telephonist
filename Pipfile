@@ -21,6 +21,7 @@ arrow = "*"
 ujson = "*"
 orjson = "*"
 fastapi-cache2 = "*"
+broadcaster = "*"
 
 [dev-packages]
 pytest = "*"

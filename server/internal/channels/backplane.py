@@ -1,25 +1,36 @@
 import asyncio
 import logging
-import pickle
-import time
 import warnings
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
 from functools import partial
 from typing import *
 
+import orjson
 from aioredis import Redis
+from bson import ObjectId
+from pydantic import BaseModel
 
 _logger = logging.getLogger("telephonist.channels")
 
 
+def _default_serialization(o):
+    if isinstance(o, BaseModel):
+        return o.dict(by_alias=True)
+    if isinstance(o, ObjectId):
+        return str(o)
+    raise TypeError
+
+
 def encode_object(data: Any) -> bytes:
-    return pickle.dumps(data)
+    return orjson.dumps(data, default=_default_serialization)
+
+
+_classes_cache: dict[str, type] = {}
 
 
 def decode_object(string: bytes) -> Any:
-    return pickle.loads(string)
+    return orjson.loads(string)
 
 
 class Subscription:
@@ -36,6 +47,9 @@ BackplaneListener = Callable[[Any], Union[None, Awaitable[None]]]
 
 
 class BackplaneBase(ABC):
+    def __init__(self):
+        pass
+
     @abstractmethod
     async def start(self):
         ...
@@ -61,16 +75,15 @@ class BackplaneBase(ABC):
     @asynccontextmanager
     async def subscribe(self, channel: str, *channels):
         channels = channels + (channel,)
-
         queue = asyncio.Queue()
-        for channel in channels:
-            await self.attach_queue(channel, queue)
+        for ch in channels:
+            await self.attach_queue(ch, queue)
 
         try:
             yield Subscription(queue)
         finally:
-            for channel in channels:
-                await self.detach_queue(channel, queue)
+            for ch in channels:
+                await self.detach_queue(ch, queue)
 
     @abstractmethod
     async def attach_queue(self, channel: str, queue: asyncio.Queue):
@@ -80,19 +93,12 @@ class BackplaneBase(ABC):
     async def detach_queue(self, channel: str, queue: asyncio.Queue):
         ...
 
-    @abstractmethod
-    async def set(self, key: str, value: Any, ttl: Optional[timedelta] = None):
-        ...
-
-    @abstractmethod
-    async def get(self, key: str) -> Any:
-        ...
-
 
 class InMemoryBackplane(BackplaneBase):
     # TODO check if something is wrong here, i wrote this without check if it's ok
 
     def __init__(self):
+        super(InMemoryBackplane, self).__init__()
         self._keys = {}
         self._channels: dict[str, List[asyncio.Queue]] = {}
 
@@ -107,7 +113,7 @@ class InMemoryBackplane(BackplaneBase):
             queues = self._channels[channel]
             for q in queues:
                 try:
-                    q.put_nowait(data)
+                    q.put_nowait((channel, data))
                 except asyncio.QueueFull:
                     warnings.warn(
                         "InMemoryBackplane failed to put a message to the"
@@ -126,50 +132,10 @@ class InMemoryBackplane(BackplaneBase):
         if channel in self._channels and queue in self._channels[channel]:
             self._channels[channel].remove(queue)
 
-    async def set(self, key: str, value: Any, ttl: Optional[timedelta] = None):
-        self._keys[key] = {
-            "value": value,
-            "ttl": ttl,
-            "expires_at": datetime.now() + ttl,
-        }
-
-    async def get(self, key: str) -> Any:
-        entry = self._keys.get(key)
-        if entry and entry["expires_at"] > datetime.now():
-            return entry["value"]
-        elif entry:
-            del self._keys[key]
-
 
 class RedisBackplane(BackplaneBase):
-    async def set(self, key: str, value: Any, ttl: Optional[timedelta] = None):
-        await self._redis.set(
-            key,
-            encode_object(
-                {
-                    "value": value,
-                    "created_at": time.time(),
-                    "ttl": None if ttl is None else ttl.total_seconds(),
-                }
-            ),
-        )
-
-    async def get(self, key: str) -> Any:
-        value = await self._redis.get(key)
-        if value is None:
-            return None
-        try:
-            value = decode_object(value)
-            if (
-                value["ttl"]
-                and value["created_at"] + value["ttl"] < time.time()
-            ):
-                value = None
-        except:
-            return None
-        return value
-
     def __init__(self, redis: Redis):
+        super(RedisBackplane, self).__init__()
         self._redis = redis
         self._listeners: dict[str, List[asyncio.Queue]] = {}
         self._pubsub = self._redis.pubsub()
@@ -261,7 +227,7 @@ async def stop_backplane():
         _backplane = None
 
 
-def get_default_backplane():
+def get_backplane() -> BackplaneBase:
     assert _backplane is not None, "RedisBackplane is not yet initialized"
     return _backplane
 

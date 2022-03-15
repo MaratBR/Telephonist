@@ -4,10 +4,10 @@ from typing import Any, Optional
 from uuid import UUID
 
 from beanie import PydanticObjectId
-from pydantic import Field
+from pydantic import Field, validator
 
 from server.database import register_model
-from server.models.common import BaseDocument
+from server.models.common import BaseDocument, convert_to_utc
 
 
 class EventSequenceState(str, enum.Enum):
@@ -41,6 +41,10 @@ class EventSequence(BaseDocument):
     )
     error: Optional[str] = None
     connection_id: Optional[UUID]
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    _created_at_validator = validator("created_at", allow_reuse=True)(
+        convert_to_utc
+    )
 
     class Collection:
         name = "event_sequences"

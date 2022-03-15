@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
+from typing import Optional
 from uuid import UUID
 
-from beanie.odm.enums import SortDirection
 from fastapi import APIRouter, Body, Depends
 
 import server.internal.telephonist as _internal
@@ -45,14 +45,15 @@ class TaskSequencesPagination(Pagination):
 
 
 @tasks_router.get("/{task_id}/sequences")
-async def get_sequences(pagination: TaskSequencesPagination = Depends()):
-    sequences = (
-        await EventSequence.find(EventSequence.task_id == task_id)
-        .sort(("_id", SortDirection.DESCENDING))
-        .limit(20)
-        .to_list()
-    )
-    return sequences
+async def get_sequences(
+    task_id: UUID,
+    state: Optional[EventSequenceState] = None,
+    pagination: TaskSequencesPagination = Depends(),
+):
+    condition = [EventSequence.task_id == task_id]
+    if state is not None:
+        condition.append(EventSequence.state == state)
+    return await pagination.paginate(EventSequence, filter_condition=condition)
 
 
 @tasks_router.get("/{app_name}/{name}")

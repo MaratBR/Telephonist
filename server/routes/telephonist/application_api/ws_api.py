@@ -12,18 +12,11 @@ from server.internal.channels import WSTicket, WSTicketModel
 from server.internal.channels.hub import (
     Hub,
     HubAuthenticationException,
-    bind_message,
-    ws_controller,
+    ws_controller, bind_message,
 )
 from server.internal.telephonist.utils import CG
 from server.models.common import AppBaseModel
-from server.models.telephonist import (
-    Application,
-    ConnectionInfo,
-    EventSequence,
-    EventSequenceState,
-    Server,
-)
+from server.models.telephonist import Application, ConnectionInfo, Server
 from server.models.telephonist.connection_info import ApplicationClientInfo
 from server.routes.telephonist.application_api._utils import APPLICATION
 from server.routes.telephonist.ws_root_router import ws_root_router
@@ -131,11 +124,8 @@ class AppReportHub(Hub):
         if message.subscriptions:
             await self.set_subscriptions(message.subscriptions)
         await self.connection.add_to_group(CG.app(self._app_id))
-        await EventSequence.find(
-            EventSequence.frozen == True,
-            EventSequence.connection_id == self._connection_info.id,
-            EventSequence.state == EventSequenceState.IN_PROGRESS,
-        ).update({"$set": {"frozen": False}})
+        # TODO find and unfreeze all frozen tasks
+        # TODO #2 ask the client regarding those sequences
         await self.send_message(
             "greetings",
             {
