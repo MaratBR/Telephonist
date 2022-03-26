@@ -1,12 +1,9 @@
 import logging
 import os
 import sys
-import time
-
-from starlette.requests import Request
 
 from server.app import create_app
-from server.internal.channels.backplane import InMemoryBackplane
+from server.common.channels.backplane import InMemoryBackplane
 
 
 def _debug_init():
@@ -48,24 +45,4 @@ def seconds_to_string(seconds: float):
 def create_debug_app():
     app = create_app(backplane=InMemoryBackplane())
     _debug_init()
-
-    logger = logging.getLogger("telephonist.debug")
-
-    @app.middleware("http")
-    async def add_process_time_header(request: Request, call_next):
-        start_time = time.time()
-        cpu_start = time.process_time()
-        response = await call_next(request)
-        process_time = time.time() - start_time
-        cpu_time = time.process_time() - cpu_start
-        response.headers["Server-Timing"] = (
-            f"app;dur={(process_time - cpu_time) * 1000},"
-            f" cpu;dur={cpu_time * 1000}"
-        )
-        logger.debug(
-            f"{request.method} {request.url} - "
-            f"total={seconds_to_string(process_time)} cpu={seconds_to_string(cpu_time)}"
-        )
-        return response
-
     return app

@@ -4,7 +4,7 @@ from datetime import datetime
 import pytest
 from pydantic import BaseModel, validator
 
-from server.models.common import convert_to_utc
+from server.common.models import convert_to_utc
 
 
 @pytest.mark.parametrize(

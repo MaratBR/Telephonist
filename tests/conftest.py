@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from server.app import create_app
-from server.internal.channels.backplane import InMemoryBackplane
+from server.common.channels.backplane import InMemoryBackplane
 from server.settings import settings
 
 MONGODB_PORT = 27222
@@ -39,7 +39,7 @@ def create_test_app():
 
     @app.on_event("startup")
     async def create_test_users():
-        from server.models.auth import User
+        from server.auth.models.auth import User
 
         tasks = []
         for i in range(10):

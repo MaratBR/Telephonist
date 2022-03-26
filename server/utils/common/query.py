@@ -4,7 +4,7 @@ from fastapi import Depends, HTTPException
 from pydantic import ValidationError
 from starlette.requests import Request
 
-from server.models.common import AppBaseModel
+from server.common.models import AppBaseModel
 
 T = TypeVar("T", bound=AppBaseModel)
 

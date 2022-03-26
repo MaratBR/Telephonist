@@ -5,15 +5,8 @@ from functools import wraps
 
 from pymongo.errors import DuplicateKeyError
 
-from server.database import init_database
-from server.models.telephonist import (
-    Application,
-    ApplicationTask,
-    AppLog,
-    EventSequence,
-    EventSequenceState,
-)
-from server.models.telephonist.task import TaskBody, TaskTrigger
+from server.database import Application, init_database
+from server.database.task import ApplicationTask, TaskBody, TaskTrigger
 
 
 def catch_duplicate_errors(fn):

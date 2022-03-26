@@ -1,9 +1,7 @@
 import argparse
-import logging
 import os.path
 import sys
 
-import anyio
 import uvicorn
 
 if __name__ == "__main__":
@@ -32,5 +30,7 @@ if __name__ == "__main__":
         factory=True,
         reload=sys_args.reload or False,
         port=5789,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
         **args
     )

@@ -10,24 +10,25 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocket
 
-from server.database import init_database, shutdown_database
-from server.internal.auth.sessions import init_redis_sessions
-from server.internal.channels import (
+from server.application_api import application_api
+from server.auth.internal.sessions import (
+    RedisSessionBackend,
+    init_sessions_backend,
+)
+from server.common.channels import (
     get_channel_layer,
     start_backplane,
     stop_backplane,
 )
-from server.internal.channels.backplane import (
+from server.common.channels.backplane import (
     BackplaneBase,
     RedisBackplane,
     get_backplane,
 )
-from server.routes import (
-    application_api_router,
-    auth_api_router,
-    ws_root_router, user_api_application,
-)
+from server.database import init_database, shutdown_database
 from server.settings import settings
+from server.user_api import user_api_application
+from server.ws_root_router import ws_root_router
 
 
 class TelephonistApp(FastAPI):
@@ -37,7 +38,7 @@ class TelephonistApp(FastAPI):
         motor_client: Optional[AsyncIOMotorClient] = None,
     ):
         super(TelephonistApp, self).__init__(
-            default_response_class=ORJSONResponse
+            default_response_class=ORJSONResponse, root_path=settings.root_path
         )
         self._backplane = backplane
         self._motor_client = motor_client
@@ -54,6 +55,10 @@ class TelephonistApp(FastAPI):
 
         self.add_event_handler("startup", self._on_startup)
         self.add_event_handler("shutdown", self._on_shutdown)
+        self.add_api_route("/", self._index)
+
+    async def _index(self):
+        return ORJSONResponse({"detail": "OK"})
 
     async def _on_startup(self):
         try:
@@ -63,7 +68,9 @@ class TelephonistApp(FastAPI):
                 self._backplane
                 or RedisBackplane(aioredis.from_url(settings.redis_url))
             )
-            init_redis_sessions(aioredis.from_url(settings.redis_url))
+            init_sessions_backend(
+                RedisSessionBackend(aioredis.from_url(settings.redis_url))
+            )
             await get_channel_layer().start()
         except Exception as exc:
             self.logger.exception(str(exc))
@@ -80,15 +87,9 @@ class TelephonistApp(FastAPI):
 
     def _init_routers(self):
         self.mount("/user-api", user_api_application)
-
-        self.include_router(auth_api_router)
-        self.include_router(application_api_router)
-        # see https://github.com/tiangolo/fastapi/pull/2640
-        # (when it's merged we can remove ws_root_router
-        # and replace it with something else)
+        self.mount("/application-api", application_api)
         self.include_router(ws_root_router)
-
-        self.add_api_route("/hc", self._health_check)
+        self.add_api_route("hc", self._health_check)
 
     async def _health_check(self):
         return ORJSONResponse(
