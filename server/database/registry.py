@@ -8,7 +8,7 @@ from beanie import Document, init_beanie
 from motor.core import AgnosticDatabase
 from pymongo.errors import CollectionInvalid
 
-from server.settings import settings
+from server.settings import get_settings
 
 _models = set()
 _client: Optional[motor.motor_asyncio.AsyncIOMotorClient] = None
@@ -21,7 +21,7 @@ def motor_client():
 
 
 def get_database() -> AgnosticDatabase:
-    return motor_client()[settings.mongodb_db_name]
+    return motor_client()[get_settings().mongodb_db_name]
 
 
 TModelType = TypeVar("TModelType")  # bound=Type[Document]
@@ -45,15 +45,17 @@ async def init_database(
 ):
     _logger.info(
         "initializing database... (settings.mongodb_db_name=%s)",
-        settings.mongodb_db_name,
+        get_settings().mongodb_db_name,
     )
     global _client
     if client:
         warnings.warn(
             "Motor client has been explicitly set in init_database function"
         )
-    _client = client or motor.motor_asyncio.AsyncIOMotorClient(settings.db_url)
-    db = _client[settings.mongodb_db_name]
+    _client = client or motor.motor_asyncio.AsyncIOMotorClient(
+        get_settings().db_url
+    )
+    db = _client[get_settings().mongodb_db_name]
     _logger.debug(
         f'initializing models: {", ".join(m.__name__ for m in _models)} ...'
     )

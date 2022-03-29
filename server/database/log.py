@@ -8,7 +8,7 @@ from pydantic import Field
 
 from server.common.models import BaseDocument
 from server.database.registry import register_model
-from server.settings import settings
+from server.settings import get_settings
 
 
 class Severity(enum.IntEnum):
@@ -31,10 +31,11 @@ class AppLog(BaseDocument):
 
     @staticmethod
     def __motor_create_collection_params__():
-        if settings.use_capped_collection_for_logs:
+        if get_settings().use_capped_collection_for_logs:
             return {
                 "capped": True,
-                "size": settings.logs_capped_collection_max_size_mb * 2**20,
+                "size": get_settings().logs_capped_collection_max_size_mb
+                * 2**20,
             }
 
     @classmethod

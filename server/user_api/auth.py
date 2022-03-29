@@ -19,7 +19,7 @@ from server.auth.internal.sessions import (
 from server.auth.internal.token import JWT, PasswordResetToken
 from server.auth.models.auth import AuthLog, User, UserView
 from server.common.models import AppBaseModel
-from server.settings import settings
+from server.settings import get_settings
 
 auth_router = fastapi.routing.APIRouter(tags=["auth"], prefix="/auth")
 
@@ -31,11 +31,13 @@ class NewUserInfo(AppBaseModel):
 
 @auth_router.post("/register")
 async def register_new_user(
-    info: NewUserInfo, host: Optional[str] = Header(None)
+    info: NewUserInfo,
+    host: Optional[str] = Header(None),
 ):
+    # TODO ????
     if (
-        settings.user_registration_unix_socket_only
-        and host != settings.unix_socket_name
+        get_settings().user_registration_unix_socket_only
+        and host != get_settings().unix_socket_name
     ):
         raise HTTPException(
             403, "User registration is only allowed through unix socket"
@@ -55,9 +57,9 @@ class LoginResponse(JSONResponse):
             cookie_name,
             session_id,
             httponly=True,
-            max_age=settings.session_lifetime.total_seconds(),
-            secure=not settings.use_non_secure_cookies,
-            samesite=settings.cookies_policy,
+            max_age=get_settings().session_lifetime.total_seconds(),
+            secure=not get_settings().use_non_secure_cookies,
+            samesite=get_settings().cookies_policy,
         )
 
 

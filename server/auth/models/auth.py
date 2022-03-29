@@ -9,7 +9,7 @@ from starlette.requests import Request
 from server.auth.internal.utils import hash_password, verify_password
 from server.common.models import AppBaseModel, BaseDocument
 from server.database.registry import register_model
-from server.settings import settings
+from server.settings import get_settings
 
 
 @register_model
@@ -74,11 +74,11 @@ class User(BaseDocument):
     @classmethod
     async def on_database_ready(cls):
         if not await cls.find(
-            cls.normalized_username == settings.default_username.upper()
+            cls.normalized_username == get_settings().default_username.upper()
         ).exists():
             await cls.create_user(
-                settings.default_username,
-                settings.default_password,
+                get_settings().default_username,
+                get_settings().default_password,
                 password_reset_required=True,
             )
 

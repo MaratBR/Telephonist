@@ -4,3 +4,6 @@ scripts/
 tests/
 .pre-commit-config.yaml
 Makefile
+.pytest_cache/
+__pycache__/
+main_debug.py

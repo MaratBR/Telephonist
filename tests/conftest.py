@@ -9,14 +9,15 @@ from fastapi.testclient import TestClient
 
 from server.app import create_app
 from server.common.channels.backplane import InMemoryBackplane
-from server.settings import settings
+from server.settings import TestingSettings, settings, use_settings
 
 MONGODB_PORT = 27222
+
+use_settings(TestingSettings)
 
 settings.redis_url = "redis://localhost:7379"
 settings.mongodb_db_name = "test_database" + uuid.uuid4().hex
 settings.db_url = f"mongodb://localhost:{MONGODB_PORT}"
-settings.is_testing = True
 
 
 @pytest.yield_fixture(scope="session_cookie")

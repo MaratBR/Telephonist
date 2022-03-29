@@ -12,7 +12,7 @@ from pymongo.client_session import ClientSession
 
 from server.common.models import AppBaseModel, BaseDocument
 from server.database.registry import register_model
-from server.settings import settings
+from server.settings import get_settings
 
 _logger = logging.getLogger("telephonist.database")
 
@@ -148,7 +148,7 @@ class ConnectionInfo(BaseDocument):
                 " unexpectedly",
                 hanging_connections,
             )
-            if settings.hanging_connections_policy == "remove":
+            if get_settings().hanging_connections_policy == "remove":
                 _logger.warning(
                     'settings.hanging_connections_policy is set to "remove",'
                     " all hanging connections will be removed"

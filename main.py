@@ -1,36 +1,46 @@
-import argparse
-import os.path
-import sys
+from typing import Optional
 
 import uvicorn
+from pydantic import BaseSettings, Field
 
-if __name__ == "__main__":
+
+class EnvSettings(BaseSettings):
+    DISABLE_SSL: bool = False
+    SSL_CERT: Optional[str]
+    SSL_KEY: Optional[str]
+    SSL_PASSWORD: Optional[str]
+    WORKERS: int = 1
+    LOG_LEVEL: str = Field(default="info")
+    PORT: int = Field(default=5789, ge=1024, lt=32768)
+
+    class Config:
+        env_prefix = "TELEPHONIST_"
+
+
+def main():
+    prod_settings = EnvSettings()
     args = {}
-    is_ssl_disabled = os.environ.get("DISABLE_SSL_IN_DEBUG") is not None
-    if (
-        os.path.isfile("certs/cert.crt")
-        and os.path.isfile("certs/key.pem")
-        and not is_ssl_disabled
-    ):
+    if not prod_settings.DISABLE_SSL:
+        assert prod_settings.SSL_KEY and prod_settings.SSL_CERT, (
+            "You must either provide ssl key path and ssl certificate through"
+            " TELEPHONIST_SSL_KEY and TELEPHONIST_SSL_CERT env. variables or"
+            " set TELEPHONIST_DISABLE_SSL to True"
+        )
         args.update(
-            ssl_keyfile="certs/key.pem",
-            ssl_certfile="certs/cert.crt",
-            ssl_keyfile_password="1234",
+            ssl_keyfile=prod_settings.SSL_KEY,
+            ssl_certfile=prod_settings.SSL_CERT,
+            ssl_keyfile_password=prod_settings.SSL_PASSWORD,
         )
-    if is_ssl_disabled:
-        print(
-            "DISABLE_SSL_IN_DEBUG is set, SSL is disabled, serving from HTTP"
-        )
-    parser = argparse.ArgumentParser(description="Process some integers.")
-    parser.add_argument("--reload", action="store_const", const=True)
-    sys_args = parser.parse_args(sys.argv[1:])
-
     uvicorn.run(
-        "server.app_debug:create_debug_app",
+        "server.app:create_production_app",
         factory=True,
-        reload=sys_args.reload or False,
-        port=5789,
-        proxy_headers=True,
-        forwarded_allow_ips="*",
+        reload=False,
+        port=prod_settings.PORT,
+        log_level=prod_settings.LOG_LEVEL,
+        workers=prod_settings.WORKERS,
         **args
     )
+
+
+if __name__ == "__main__":
+    main()

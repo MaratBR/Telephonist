@@ -7,7 +7,6 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from server.auth.internal.exceptions import InvalidToken
-from server.settings import settings
 
 __all__ = (
     "hash_password",
@@ -18,6 +17,8 @@ __all__ = (
     "static_key_factory",
     "parse_resource_key",
 )
+
+from server.settings import get_settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -38,8 +39,8 @@ def decode_token_raw(token: str) -> dict:
     try:
         return jwt.decode(
             token,
-            settings.secret,
-            issuer=settings.jwt_issuer,
+            get_settings().secret,
+            issuer=get_settings().jwt_issuer,
             algorithms=[jwt.ALGORITHMS.HS256],
             options={"require_sub": True},
         )
@@ -49,8 +50,8 @@ def decode_token_raw(token: str) -> dict:
 
 def encode_token_raw(data: dict):
     return jwt.encode(
-        {**data, "iss": settings.jwt_issuer},
-        settings.secret,
+        {**data, "iss": get_settings().jwt_issuer},
+        get_settings().secret,
     )
 
 

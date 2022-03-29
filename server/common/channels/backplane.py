@@ -131,15 +131,12 @@ class InMemoryBackplane(BackplaneBase):
     async def attach_queue(self, channel: str, queue: asyncio.Queue):
         if channel in self._channels:
             if queue not in self._channels[channel]:
-                print(f"attaching queue {id(queue)} to {channel}")
                 self._channels[channel].append(queue)
         else:
-            print(f"attaching queue {id(queue)} to {channel} (first time)")
             self._channels[channel] = [queue]
 
     async def detach_queue(self, channel: str, queue: asyncio.Queue):
         if channel in self._channels and queue in self._channels[channel]:
-            print(f"detaching queue {id(queue)} from {channel}")
             self._channels[channel].remove(queue)
 
 

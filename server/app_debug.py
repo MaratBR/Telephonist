@@ -2,8 +2,7 @@ import logging
 import os
 import sys
 
-from server.app import create_app
-from server.common.channels.backplane import InMemoryBackplane
+from server.app import create_debug_app as _create_debug_app
 
 
 def _debug_init():
@@ -43,6 +42,6 @@ def seconds_to_string(seconds: float):
 
 
 def create_debug_app():
-    app = create_app(backplane=InMemoryBackplane())
+    app = _create_debug_app()
     _debug_init()
     return app
