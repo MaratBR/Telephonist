@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Union
 
 import fastapi
@@ -6,7 +6,9 @@ from beanie import PydanticObjectId
 from beanie.odm.enums import SortDirection
 from bson.errors import InvalidId
 from fastapi import Body, Depends, HTTPException, Query
+from starlette import status
 from starlette.requests import Request
+from starlette.responses import Response
 
 import server.common.internal.application as _internal
 from server.common.internal.utils import Errors, require_model_with_id
@@ -89,9 +91,11 @@ async def get_application(app_id_or_name: str):
     except InvalidId:
         pass
     app = await _get_application(app_id_or_name)
-    connections = await ConnectionInfo.find(
-        ConnectionInfo.app_id == app.id
-    ).to_list()
+    connections = (
+        await ConnectionInfo.find(ConnectionInfo.app_id == app.id)
+        .sort(("connected_at", SortDirection.DESCENDING))
+        .to_list()
+    )
     tasks = (
         await ApplicationTask.not_deleted()
         .find(ApplicationTask.app_id == app.id)
@@ -167,33 +171,26 @@ async def get_app_logs(
     return {"before": before, "logs": logs}
 
 
-class CRRequest(AppBaseModel):
-    client_name: str
-
-
-@applications_router.post("/cr/start")
-async def request_code_registration(
-    request: Request, body: CRRequest = Body(...)
-):
+@applications_router.post("/cr")
+async def request_code_registration(request: Request, del_code: Optional[str] = Query(None)):
     code = await OneTimeSecurityCode.new(
-        "new_app_code", body.client_name, ip_address=request.client.host
+        "new_app", ip_address=request.client.host
     )
+    if del_code and await OneTimeSecurityCode.exists(del_code, "new_app"):
+        await OneTimeSecurityCode.find({"_id": del_code}).delete()
     return {
         "code": code.id,
-        "expires_at": code.expires_at,
+        "expires_at": code.expires_at.replace(tzinfo=timezone.utc),
         "ttl": OneTimeSecurityCode.DEFAULT_LIFETIME.total_seconds(),
     }
 
 
-@applications_router.post("/cr/confirm")
-async def confirm_code_registration(code: str = Query(...)):
-    code = await OneTimeSecurityCode.get_valid_code("new_app_code", code)
-    if code is None:
-        raise HTTPException(404, "code does not exist or expired")
-    code.confirmed = True
-    code.expires_at = datetime.now() + timedelta(days=10)
-    await code.save()
-    return {"detail": "Code confirmed"}
+@applications_router.delete("/cr")
+async def delete_request_code(code: str = Query(...)):
+    instance = await OneTimeSecurityCode.get_valid_code("new_app", code)
+    if instance:
+        await instance.delete()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 class CRFinishRequest(AppBaseModel):
@@ -207,7 +204,7 @@ class CRFinishResponse(AppBaseModel):
 
 
 @applications_router.post(
-    "/code-register/finish/{code}", response_model=CRFinishResponse
+    "/cr/finish/{code}", response_model=CRFinishResponse
 )
 async def finish_code_registration(code: str, body: CRFinishRequest):
     code_inst = await OneTimeSecurityCode.get_valid_code("new_app_code", code)
@@ -223,7 +220,7 @@ async def finish_code_registration(code: str, body: CRFinishRequest):
 
 def _detailed_application_task_view(task: ApplicationTask, app: Application):
     return {
-        **task.dict(exclude={"app_id", "app_name"}, by_alias=True),
+        **task.dict(exclude={"app_id"}, by_alias=True),
         "app": app.dict(include={"name", "id", "display_name"}, by_alias=True),
     }
 
@@ -252,7 +249,7 @@ async def define_application_task(
     app_ident: str, body: _internal.DefineTask = Body(...)
 ):
     app = await _get_application(app_ident)
-    task = await _internal.define_application_task(app, body)
+    task = await _internal.define_task(app, body)
     return _detailed_application_task_view(task, app)
 
 

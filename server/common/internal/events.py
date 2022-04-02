@@ -10,7 +10,13 @@ from server.common.channels import get_channel_layer
 from server.common.models import AppBaseModel, Identifier
 from server.common.transit import dispatch, register_handler
 from server.common.transit.transit import BatchConfig
-from server.database import ApplicationTask, Counter, Event, EventSequence
+from server.database import (
+    ApplicationTask,
+    ConnectionInfo,
+    Counter,
+    Event,
+    EventSequence, Application,
+)
 from server.database.sequence import EventSequenceState
 
 from .utils import CG
@@ -47,11 +53,11 @@ class EventDescriptor(AppBaseModel):
 
 
 async def create_event(
-    app_id: PydanticObjectId, descriptor: EventDescriptor, ip_address: str
+    app: Application, descriptor: EventDescriptor, ip_address: str
 ):
     if descriptor.sequence_id:
         seq = await EventSequence.get(descriptor.sequence_id)
-        if seq is None or seq.app_id != app_id:
+        if seq is None or seq.app_id != app.id:
             raise HTTPException(
                 401,
                 "the sequence you try to publish to does not exist or does not"
@@ -61,14 +67,14 @@ async def create_event(
             raise HTTPException(
                 409, "the sequence you try to publish to is marked as finished"
             )
-        event_key = f"{descriptor.name}@{seq.task_name}"
+        event_key = f"{seq.task_name}/{descriptor.name}"
         task_name = seq.task_name
     else:
-        event_key = descriptor.name
+        event_key = f"{app.name}/_/{descriptor.name}"
         task_name = None
 
     return Event(
-        app_id=app_id,
+        app_id=app.id,
         event_type=descriptor.name,
         event_key=event_key,
         data=descriptor.data,
@@ -81,11 +87,11 @@ async def create_event(
 async def notify_events(*events: Event):
     for event in events:
         groups = [
-            CG.MONITORING / "appEvents" / event.app_id,
-            CG.EVENTS / "key" / event.event_key,
+            f"m/appEvents/{event.app_id}",
+            f"e/key/{event.event_key}",
         ]
         if event.sequence_id:
-            groups.append(CG.MONITORING / "sequenceEvents" / event.sequence_id)
+            groups.append(f"m/sequenceEvents/{event.sequence_id}")
         await get_channel_layer().groups_send(
             groups,
             "new_event",
@@ -126,8 +132,9 @@ async def apply_sequence_updates_on_event(event: Event):
 class SequenceDescriptor(AppBaseModel):
     meta: Optional[dict[str, Any]]
     description: Optional[str]
-    task_id: Optional[Union[UUID, str]]
+    task_id: Union[UUID, str]
     custom_name: Optional[str]
+    connection_id: Optional[UUID]
 
 
 @register_handler(batch=BatchConfig(max_batch_size=100, delay=1))
@@ -138,7 +145,7 @@ async def _on_sequence_created(sequences: list[SequenceCreated]):
         if m.task_id:
             await Counter.inc_counter(f"sequences/task/{m.task_id}", 1)
         await get_channel_layer().group_send(
-            CG.MONITORING / "app" / m.app_id,
+            f"m/app/{m.app_id}",
             "sequence",
             {"event": "new", "sequence_id": m.sequence_id},
         )
@@ -149,8 +156,8 @@ async def _on_sequence_updated(sequences: list[SequenceUpdated]):
     for m in sequences:
         await get_channel_layer().groups_send(
             [
-                CG.MONITORING / "sequence" / m.sequence.id,
-                CG.MONITORING / "app" / m.sequence.app_id,
+                f"m/sequence/{m.sequence.id}",
+                f"m/app/{m.sequence.app_id}",
             ],
             "sequence",
             {"event": "update", "sequence": m.sequence},
@@ -170,7 +177,7 @@ async def _on_sequence_finished(sequences: list[SequenceFinished]):
                 )
             failed_sequences += 1
         await get_channel_layer().group_send(
-            CG.MONITORING / "app" / m.app_id,
+            f"m/app/{m.app_id}",
             "sequence",
             {
                 "event": "finished",
@@ -187,32 +194,33 @@ async def _on_sequence_finished(sequences: list[SequenceFinished]):
 async def create_sequence_and_start_event(
     app_id: PydanticObjectId, descriptor: SequenceDescriptor, ip_address: str
 ) -> tuple[EventSequence, Event]:
-    if descriptor.task_id:
-        task = await ApplicationTask.find_task(descriptor.task_id)
-        if task is None:
+    if descriptor.connection_id:
+        connection = await ConnectionInfo.get(descriptor.connection_id)
+        if connection is None:
             raise HTTPException(
                 404,
-                f"task with id {descriptor.task_id} never existed or was"
-                " deleted",
+                "cannot create sequence for connection id"
+                f" {descriptor.connection_id}: cannot find connection with"
+                " given id",
             )
-        if task.app_id != app_id:
-            raise HTTPException(
-                401,
-                f"task {task.id} belongs to application {task.app_id}, not to"
-                f" {app_id}, therefore you cannot create a sequence for this"
-                " task",
-            )
-        task_name = task.name
-        name = descriptor.custom_name or (
-            task_name + datetime.now().strftime(" (%Y.%m.%d %H:%M:%S)")
+    task = await ApplicationTask.find_task(descriptor.task_id)
+    if task is None:
+        raise HTTPException(
+            404,
+            "cannot create sequence: task with id"
+            f" {descriptor.task_id} never existed or was deleted",
         )
-    else:
-        task_name = None
-        if descriptor.custom_name is None:
-            raise HTTPException(
-                422, "you have to either specify task_id or custom_name"
-            )
-        name = descriptor.custom_name
+    if task.app_id != app_id:
+        raise HTTPException(
+            401,
+            f"cannot create sequence: task {task.id} belongs to"
+            f" application {task.app_id}, not to {app_id}, therefore you"
+            " cannot create a sequence for this task",
+        )
+    task_name = task.qualified_name
+    name = descriptor.custom_name or (
+        task_name + datetime.now().strftime(" (%Y.%m.%d %H:%M:%S)")
+    )
 
     sequence = EventSequence(
         name=name,
@@ -229,9 +237,7 @@ async def create_sequence_and_start_event(
         sequence_id=sequence.id,
         task_name=sequence.task_name,
         event_type=START_EVENT,
-        event_key=f"{START_EVENT}@{sequence.task_name}"
-        if sequence.task_name
-        else START_EVENT,
+        event_key=f"{sequence.task_name}/start",
         publisher_ip=ip_address,
         app_id=sequence.app_id,
     )
@@ -250,6 +256,7 @@ async def finish_sequence(
     if sequence.state.is_finished:
         raise HTTPException(409, f"sequence {sequence.id} is already finished")
     sequence.finished_at = datetime.utcnow()
+    sequence.error = finish_request.error_message
     if finish_request.is_skipped:
         sequence.state = EventSequenceState.SKIPPED
     elif finish_request.error_message:
@@ -299,13 +306,3 @@ async def finish_sequence(
         await event.insert()
 
     return events
-
-
-async def set_sequence_meta(
-    sequence: EventSequence, new_meta: dict[str, Any], replace: bool = False
-):
-    if replace:
-        sequence.meta = new_meta
-    else:
-        sequence.meta.update(new_meta)
-    await sequence.save_changes()

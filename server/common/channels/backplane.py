@@ -235,7 +235,7 @@ async def stop_backplane():
 
 
 def get_backplane() -> BackplaneBase:
-    assert _backplane is not None, "RedisBackplane is not yet initialized"
+    assert _backplane is not None, "backplane is not yet initialized"
     return _backplane
 
 

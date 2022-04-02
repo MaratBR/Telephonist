@@ -1,5 +1,5 @@
 from beanie.odm.enums import SortDirection
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, APIRouter
 
 from server.auth.internal.dependencies import (
     require_session,
@@ -23,28 +23,28 @@ from server.user_api.ws_router import ws_router
 
 authentication_deps = [Depends(require_session), Depends(validate_csrf_token)]
 
-user_api_application = FastAPI()
+user_api = APIRouter()
 
 
-user_api_application.include_router(
+user_api.include_router(
     applications_router, dependencies=authentication_deps
 )
-user_api_application.include_router(
+user_api.include_router(
     events_router, dependencies=authentication_deps
 )
-user_api_application.include_router(
+user_api.include_router(
     tasks_router, dependencies=authentication_deps
 )
-user_api_application.include_router(
+user_api.include_router(
     logs_router, dependencies=authentication_deps
 )
-user_api_application.include_router(
+user_api.include_router(
     ws_router, prefix="/ws", dependencies=authentication_deps
 )
-user_api_application.include_router(auth_router)
+user_api.include_router(auth_router)
 
 
-@user_api_application.get("/status")
+@user_api.get("/status")
 async def get_stats():
     db = get_database()
     db_stats = await db.command("dbStats")

@@ -31,7 +31,7 @@ from server.common.channels.backplane import (
 )
 from server.database import init_database, shutdown_database
 from server.settings import DebugSettings, Settings, get_settings, use_settings
-from server.user_api import user_api_application
+from server.user_api import user_api
 from server.ws_root_router import ws_root_router
 
 
@@ -117,10 +117,10 @@ class TelephonistApp(FastAPI):
             raise
 
     def _init_routers(self):
-        self.mount("/user-api", user_api_application)
-        self.mount("/application-api", application_api)
         self.include_router(ws_root_router)
-        self.add_api_route("hc", self._health_check)
+        self.include_router(user_api, prefix="/api/user-v1")
+        self.include_router(application_api, prefix="/api/application-v1")
+        self.add_api_route("/hc", self._health_check)
 
     async def _health_check(self):
         return ORJSONResponse(

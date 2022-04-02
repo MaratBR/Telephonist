@@ -53,7 +53,6 @@ class TaskBody(AppBaseModel):
 class ApplicationTask(SoftDeletes):
     id: UUID = Field(default_factory=uuid4, alias="_id")
     app_id: PydanticObjectId
-    app_name: str
     name: str
     qualified_name: str
     description: str = ""

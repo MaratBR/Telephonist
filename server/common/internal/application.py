@@ -27,10 +27,13 @@ from server.database.task import (
 
 class CreateApplication(AppBaseModel):
     name: Identifier
-    display_name: str
-    description: str = Field(max_length=3000, default="")
+    display_name: Optional[str]
+    description: Optional[str] = Field(max_length=3000)
     tags: Optional[List[str]]
     disabled: bool = False
+
+# test_application/my_task/completed
+#
 
 
 async def create_new_application(create_application: CreateApplication):
@@ -42,9 +45,9 @@ async def create_new_application(create_application: CreateApplication):
             "Application with given name already exists",
         )
     app = Application(
-        display_name=create_application.display_name,
+        display_name=create_application.display_name or create_application.name,
         name=create_application.name,
-        description=create_application.description,
+        description=create_application.description or "",
         disabled=create_application.disabled,
         tags=[]
         if create_application.tags is None
@@ -150,7 +153,7 @@ async def raise_if_application_task_name_taken(
         )
 
 
-async def define_application_task(app: Application, body: DefineTask):
+async def define_task(app: Application, body: DefineTask):
     await raise_if_application_task_name_taken(app.id, body.name)
     task = ApplicationTask(
         app_name=app.name,
@@ -163,7 +166,6 @@ async def define_application_task(app: Application, body: DefineTask):
         app=app,
     )
     await task.insert()
-    await notify_task_changed(task)
     return task
 
 
@@ -174,7 +176,7 @@ async def deactivate_application_task(task: ApplicationTask):
 
 async def on_application_task_deleted(task: ApplicationTask):
     await get_channel_layer().group_send(
-        CG.APPLICATION / task.app_id, "task_removed", task.id
+        f"a/{task.app_id}", "task_removed", task.id
     )
 
 
@@ -234,7 +236,7 @@ class SyncResult(AppBaseModel):
     errors: dict[UUID, str] = Field(default_factory=dict)
 
 
-async def sync_defined_tasks(
+async def sync_tasks(
     app: Application, tasks: List[DefinedTask]
 ) -> SyncResult:
     db_tasks: dict[UUID, ApplicationTask] = {
@@ -286,7 +288,6 @@ async def sync_defined_tasks(
         else:
             # TODO validate body, maybe?
             db_task = ApplicationTask(
-                app_name=app.name,
                 name=task.name,
                 qualified_name=app.name + "/" + task.name,
                 app_id=app.id,
@@ -307,18 +308,18 @@ async def sync_defined_tasks(
 
 async def notify_task_changed(task: ApplicationTask):
     await get_channel_layer().group_send(
-        CG.MONITORING / "app" / task.app_id, "task", task
+        f"m/app/{task.app_id}", "task", task
     )
     await get_channel_layer().group_send(
-        CG.APPLICATION / task.app_id, "task_updated", DefinedTask.from_db(task)
+        f"a/{task.app_id}", "task_updated", DefinedTask.from_db(task)
     )
 
 
 async def notify_connection_changed(connection: ConnectionInfo):
     await get_channel_layer().groups_send(
         [
-            CG.MONITORING / "app" / connection.app_id,
-            CG.APPLICATION / connection.app_id,
+            f"m/app/{connection.app_id}",
+            f"a/{connection.app_id}",
         ],
         "connection",
         connection,

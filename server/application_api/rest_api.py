@@ -3,20 +3,20 @@ from uuid import UUID
 
 from beanie import PydanticObjectId
 from beanie.operators import In
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, HTTPException, Query
 from starlette.requests import Request
 
 import server.common.internal.application as application_internal
 import server.common.internal.events as event_internal
 from server.application_api._utils import APPLICATION
+from server.common.channels import get_channel_layer
 from server.common.models import AppBaseModel
 from server.common.transit import dispatch
-from server.database import ApplicationTask, EventSequence
+from server.database import ApplicationTask, EventSequence, OneTimeSecurityCode
 
-rest_router = APIRouter(dependencies=[APPLICATION])
+rest_router = APIRouter()
 
-
-async def get_sequence_or_404(
+async def _get_sequence_or_404(
     sequence_id: PydanticObjectId, app_id: Optional[PydanticObjectId] = None
 ):
     sequence = await EventSequence.get(sequence_id)
@@ -38,16 +38,35 @@ async def probe():
     return {"detail": "ok"}
 
 
-@rest_router.get("/self")
+@rest_router.get("/self", dependencies=[APPLICATION])
 async def get_self(app=APPLICATION):
     return app
+
+
+@rest_router.post("/cr")
+async def code_registration(code: str = Query(...), body: application_internal.CreateApplication = Body(...)):
+    body.disabled = False
+    code = await OneTimeSecurityCode.get_valid_code("new_app", code)
+    if code is None:
+        raise HTTPException(401, "Invalid or expired registration code")
+    application = await application_internal.create_new_application(body)
+    await get_channel_layer().group_send(
+        f"m/cr/{code}",
+        "cr_complete",
+        {"cr": code, "app_id": application.id, "app_name": application.name}
+    )
+    return {
+        "detail": "Application registered successfully!",
+        "key": application.access_key,
+        "_id": application.id
+    }
 
 
 class TaskView(application_internal.DefinedTask):
     qualified_name: str
 
 
-@rest_router.get("/defined-tasks")
+@rest_router.get("/defined-tasks", dependencies=[APPLICATION])
 async def get_tasks(app=APPLICATION):
     tasks = (
         await ApplicationTask.not_deleted()
@@ -58,11 +77,12 @@ async def get_tasks(app=APPLICATION):
     return tasks
 
 
-@rest_router.post("/defined-tasks")
-async def define_app_task(
+@rest_router.post("/defined-tasks", dependencies=[APPLICATION])
+async def define_task_route(
     app=APPLICATION, body: application_internal.DefineTask = Body(...)
 ):
-    task = application_internal.define_application_task(app, body)
+    task = await application_internal.define_task(app, body)
+    await application_internal.notify_task_changed(task)
     return task
 
 
@@ -70,15 +90,17 @@ class DefinedTaskConfig(AppBaseModel):
     tasks: List[application_internal.DefinedTask]
 
 
-@rest_router.post("/defined-tasks/synchronize")
-async def synchronize_application_tasks(
+@rest_router.post("/defined-tasks/synchronize", dependencies=[APPLICATION])
+async def sync_tasks_route(
     app=APPLICATION, body: DefinedTaskConfig = Body(...)
 ):
-    return await application_internal.sync_defined_tasks(app, body.tasks)
+    return await application_internal.sync_tasks(app, body.tasks)
 
 
-@rest_router.post("/defined-tasks/check")
-async def find_defined_tasks(names: List[str] = Body(...), app=APPLICATION):
+@rest_router.post("/defined-tasks/check", dependencies=[APPLICATION])
+async def find_defined_tasks_route(
+    names: List[str] = Body(...), app=APPLICATION
+):
     tasks = (
         await ApplicationTask.not_deleted().find(In("name", names)).to_list()
     )
@@ -99,8 +121,8 @@ async def find_defined_tasks(names: List[str] = Body(...), app=APPLICATION):
     }
 
 
-@rest_router.patch("/defined-tasks/{task_id}")
-async def update_app_task(
+@rest_router.patch("/defined-tasks/{task_id}", dependencies=[APPLICATION])
+async def update_task_route(
     task_id: UUID,
     app=APPLICATION,
     update: application_internal.TaskUpdate = Body(...),
@@ -115,8 +137,8 @@ async def update_app_task(
     return task
 
 
-@rest_router.delete("/defined-tasks/{task_id}")
-async def deactivate_task(task_id: UUID, app=APPLICATION):
+@rest_router.delete("/defined-tasks/{task_id}", dependencies=[APPLICATION])
+async def deactivate_task_route(task_id: UUID, app=APPLICATION):
     task = await application_internal.get_task_or_404(task_id)
     if task.app_id != app.id:
         raise HTTPException(
@@ -128,8 +150,8 @@ async def deactivate_task(task_id: UUID, app=APPLICATION):
     return {"detail": "Application task has been deleted"}
 
 
-@rest_router.post("/events/publish")
-async def publish_event(
+@rest_router.post("/events/publish", dependencies=[APPLICATION])
+async def publish_event_route(
     request: Request,
     app=APPLICATION,
     event_request: event_internal.EventDescriptor = Body(...),
@@ -140,7 +162,7 @@ async def publish_event(
             f"event type '{event_request.name}' is reserved for internal use",
         )
     event = await event_internal.create_event(
-        app.id, event_request, request.client.host
+        app, event_request, request.client.host
     )
     await event_internal.notify_events(event)
     if event.sequence_id:
@@ -148,8 +170,8 @@ async def publish_event(
     return {"detail": "Published"}
 
 
-@rest_router.post("/sequences")
-async def create_sequence(
+@rest_router.post("/sequences", dependencies=[APPLICATION])
+async def create_sequence_route(
     request: Request,
     app=APPLICATION,
     descriptor: event_internal.SequenceDescriptor = Body(...),
@@ -171,14 +193,14 @@ async def create_sequence(
     return sequence
 
 
-@rest_router.post("/sequences/{sequence_id}/finish")
+@rest_router.post("/sequences/{sequence_id}/finish", dependencies=[APPLICATION])
 async def finish_sequence(
     request: Request,
     sequence_id: PydanticObjectId,
     app=APPLICATION,
     update: event_internal.FinishSequence = Body(...),
 ):
-    sequence = await get_sequence_or_404(sequence_id, app.id)
+    sequence = await _get_sequence_or_404(sequence_id, app.id)
     events = await event_internal.finish_sequence(
         sequence, update, request.client.host
     )
@@ -194,12 +216,13 @@ async def finish_sequence(
     return {"detail": "Sequence finished"}
 
 
-@rest_router.post("/sequences/{sequence_id}/meta")
-async def set_sequence_meta(
+@rest_router.post("/sequences/{sequence_id}/meta", dependencies=[APPLICATION])
+async def set_sequence_meta_route(
     sequence_id: PydanticObjectId,
     app=APPLICATION,
     new_meta: dict[str, Any] = Body(...),
 ):
-    sequence = await get_sequence_or_404(sequence_id, app.id)
-    await event_internal.set_sequence_meta(sequence, new_meta)
+    sequence = await _get_sequence_or_404(sequence_id, app.id)
+    await sequence.update_meta(new_meta)
+    await dispatch(event_internal.SequenceUpdated(sequence=sequence))
     return {"detail": "Sequence's meta has been updated"}

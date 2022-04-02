@@ -14,7 +14,7 @@ class IdProjection(AppBaseModel):
     id: Union[PydanticObjectId, UUID, str, int] = Field(alias="_id")
 
 
-Identifier = constr(regex=r"^[\d\w%^$#&\-]+$")
+Identifier = constr(regex=r"^[\d\w%^$#&\-]+\Z")
 _DT = TypeVar("_DT", bound=datetime)
 
 

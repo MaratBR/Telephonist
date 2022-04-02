@@ -1,6 +1,6 @@
 import random
 from datetime import datetime, timedelta
-from typing import Awaitable
+from typing import Awaitable, Optional, ClassVar
 
 import pymongo
 from pydantic import Field
@@ -17,30 +17,27 @@ def generate_security_code(length: int = 8):
 
 @register_model
 class OneTimeSecurityCode(BaseDocument):
-    DEFAULT_LIFETIME = timedelta(minutes=10)
+    DEFAULT_LIFETIME: ClassVar[timedelta] = timedelta(minutes=10)
 
     id: str = Field(default_factory=generate_security_code)
     expires_at: datetime
     code_type: str
     confirmed: bool = False
-    created_by: str
     ip_address: str
 
     @classmethod
     async def new(
         cls,
         code_type: str,
-        created_by: str,
         ip_address: str,
         lifetime: timedelta = DEFAULT_LIFETIME,
     ) -> "OneTimeSecurityCode":
         code = await cls._generate_code()
         code_inst = cls(
             id=code,
-            expires_at=datetime.now() + lifetime,
+            expires_at=datetime.utcnow() + lifetime,
             code_type=code_type,
             ip_address=ip_address,
-            created_by=created_by,
         )
         await code_inst.save()
         return code_inst
@@ -59,20 +56,23 @@ class OneTimeSecurityCode(BaseDocument):
         return code
 
     @classmethod
-    def exists(cls, code_type: str, code: str):
-        return cls.find(
-            {
+    def exists(cls, code: str, type_: Optional[str] = None):
+        find = {
                 "_id": code,
             }
+        if type_:
+            find["code_type"] = type_
+        return cls.find(
+            find
         ).exists()
 
     @classmethod
-    def get_valid_code(
+    async def get_valid_code(
         cls, code_type: str, code: str
-    ) -> Awaitable["OneTimeSecurityCode"]:
-        return cls.find_one(
+    ) -> Optional["OneTimeSecurityCode"]:
+        return await cls.find_one(
             {"_id": code, "code_type": code_type},
-            cls.expires_at > datetime.now(),
+            cls.expires_at > datetime.utcnow(),
         )
 
     @classmethod

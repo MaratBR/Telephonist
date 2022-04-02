@@ -41,11 +41,11 @@ async def send_logs(
         models[i].id = PydanticObjectId(result.inserted_ids[i])
     groups = (
         [
-            CG.MONITORING / "sequenceLogs" / sequence_id,
-            CG.MONITORING / "appLogs" / app_id,
+            f"m/sequenceLogs/{sequence_id}",
+            f"m/appLogs/{app_id}"
         ]
         if sequence_id
-        else [CG.MONITORING / "appLogs" / app_id]
+        else [f"m/appLogs/{app_id}"]
     )
     await get_channel_layer().groups_send(
         groups,

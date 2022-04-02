@@ -62,7 +62,7 @@ class LogMessage(AppBaseModel):
 
 
 # unless https://github.com/tiangolo/fastapi/pull/2640 gets merged, we're stuck with this workaround
-@ws_controller(ws_root_router, "/_ws/application-api/report")
+@ws_controller(ws_root_router, "/_ws/application/report")
 class AppReportHub(Hub):
     ticket: WSTicketModel[Application] = WSTicket(Application)
     same_ip: Optional[str] = Query(None)
@@ -128,7 +128,7 @@ class AppReportHub(Hub):
         )
         if message.subscriptions:
             await self.set_subscriptions(message.subscriptions)
-        await self.connection.add_to_group(CG.APPLICATION / self._app_id)
+        await self.connection.add_to_group(f"a/{self._app_id}")
         # TODO find and unfreeze all frozen tasks
         # TODO #2 ask the client regarding those sequences
         await self.send_message(
@@ -156,7 +156,7 @@ class AppReportHub(Hub):
     @bind_message("subscribe")
     @_if_ready_only
     async def subscribe(self, event_type: str):
-        await self.connection.add_to_group(CG.events(event_type=event_type))
+        await self.connection.add_to_group("")
         await ConnectionInfo.add_subscription(
             self._connection_info.id, event_type
         )
@@ -174,7 +174,7 @@ class AppReportHub(Hub):
     @bind_message("synchronize")
     @_if_ready_only
     async def synchronize_tasks(self, tasks: List[_internal.DefinedTask]):
-        tasks = await _internal.sync_defined_tasks(
+        tasks = await _internal.sync_tasks(
             await self._get_application(), tasks
         )
         await self.send_message("tasks", tasks)

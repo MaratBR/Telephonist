@@ -5,8 +5,21 @@ from functools import wraps
 
 from pymongo.errors import DuplicateKeyError
 
-from server.database import Application, init_database
-from server.database.task import ApplicationTask, TaskBody, TaskTrigger
+from server.common.internal import create_sequence_and_start_event
+from server.common.internal.application import (
+    CreateApplication,
+    DefineTask,
+    create_new_application,
+    define_task,
+)
+from server.common.internal.events import SequenceDescriptor, finish_sequence, FinishSequence
+from server.database import Application, EventSequence, init_database, Event
+from server.database.task import (
+    ApplicationTask,
+    TaskBody,
+    TaskTypesRegistry,
+)
+from server.settings import use_settings, DebugSettings
 
 
 def catch_duplicate_errors(fn):
@@ -20,116 +33,82 @@ def catch_duplicate_errors(fn):
     return new_fn
 
 
+async def clear_db():
+    for m in (ApplicationTask, Application, Event, EventSequence):
+        await m.delete_all()
+
+
 @catch_duplicate_errors
 async def populate_application(name: str):
-    app = Application(
-        name=name,
-        display_name=name.capitalize().replace("_", " "),
+    app = await create_new_application(
+        CreateApplication(
+            name=name, display_name=name.capitalize().replace("_", " ")
+        )
     )
-    await app.insert()
 
-    tasks = [
-        ApplicationTask(
-            app_id=app.id,
-            name=f"exec_task",
-            display_name='Task of type "exec"',
-            app_name=name,
-            qualified_name=f"{name}/exec_task",
-            body=TaskBody(type="exec", value='echo "Hello World!"'),
-            triggers=[
-                TaskTrigger(name="fsnotify", body="/home"),
-            ],
-        ),
-        ApplicationTask(
-            app_id=app.id,
-            name=f"exec_task",
-            display_name='Task of type "script"',
-            app_name=name,
-            qualified_name=f"{name}/script_task",
+    for i in range(5, 100, 10):
+        await define_task(
+            app,
+            DefineTask(
+                name=f"script_task_sleep_{i}",
+                description=f"Script tasks that sleeps for {i} seconds",
+                body=TaskBody(
+                    type=TaskTypesRegistry.SCRIPT, value=f"echo Sleeping for {i} seconds\nsleep {i}\necho Done sleeping for {i} seconds"
+                ),
+            ),
+        )
+
+    await define_task(
+        app,
+        DefineTask(
+            name="exec_task",
+            description="Some exec task",
             body=TaskBody(
-                type="script", value='#!/bin/bash\necho "Hello World!"\nenv'
+                type=TaskTypesRegistry.EXEC, value="/usr/bin/env"
             ),
-            triggers=[
-                TaskTrigger(name="fsnotify", body="/home"),
-            ],
         ),
-        ApplicationTask(
-            app_id=app.id,
-            name=f"exec_task",
-            display_name='Task of type "arbitrary"',
-            app_name=name,
-            qualified_name=f"{name}/arbitrary_task",
+    )
+    await define_task(
+        app,
+        DefineTask(
+            name="script_task",
+            description="Some script task",
             body=TaskBody(
-                type="arbitrary",
-                value={"some_value": 42, "some_other_value": "lorem"},
+                type=TaskTypesRegistry.SCRIPT, value="echo 123\necho 2\nrm /tmp/testfolder"
             ),
-            triggers=[
-                TaskTrigger(name="fsnotify", body="/home"),
-            ],
         ),
-    ]
-    for task in tasks:
-        await task.insert()
-        sequences = [
-            EventSequence(
-                name=f"Failed sequence ({task.qualified_name})",
-                task_id=task.id,
-                app_id=task.app_id,
-                task_name=task.qualified_name,
-                description="this is a failed sequence",
-                error="Something went wrong",
-                state=EventSequenceState.FAILED,
+    )
+    arbitrary_task = await define_task(
+        app,
+        DefineTask(
+            name="arbitrary_task",
+            description="Some script task",
+            body=TaskBody(
+                type=TaskTypesRegistry.ARBITRARY, value="echo 123\necho 2\nrm /tmp/testfolder"
             ),
-            EventSequence(
-                name=f"Successful sequence ({task.qualified_name})",
-                app_id=task.app_id,
-                task_id=task.id,
-                task_name=task.qualified_name,
-                description="this is a successful sequence",
-                state=EventSequenceState.SUCCEEDED,
-            ),
-            EventSequence(
-                name=f"Frozen sequence ({task.qualified_name})",
-                task_id=task.id,
-                app_id=task.app_id,
-                task_name=task.qualified_name,
-                description="this sequence is frozen",
-                state=EventSequenceState.FROZEN,
-            ),
-            EventSequence(
-                name=f"In-progress sequence ({task.qualified_name})",
-                task_id=task.id,
-                app_id=task.app_id,
-                task_name=task.qualified_name,
-                description="this sequence is in progress and has no metadata",
-                state=EventSequenceState.IN_PROGRESS,
-            ),
-            EventSequence(
-                name=f"In-progress sequence ({task.qualified_name})",
-                task_id=task.id,
-                app_id=task.app_id,
-                task_name=task.qualified_name,
-                description="this sequence is in progress and has metadata",
-                state=EventSequenceState.IN_PROGRESS,
-                meta={
-                    "progress": 34.56,
-                    "steps_total": 12,
-                    "steps_done": 4,
-                    "description": (
-                        "Assembling the assembler so we can assemle more"
-                        " assemblers for all of your assemling needs"
-                    ),
-                },
-            ),
-        ]
+        ),
+    )
+    seq, _ = await create_sequence_and_start_event(app.id, SequenceDescriptor(task_id=arbitrary_task.id), '127.0.0.1')
+    await finish_sequence(seq, FinishSequence(), '127.0.0.1')
+
+    seq, _ = await create_sequence_and_start_event(app.id, SequenceDescriptor(task_id=arbitrary_task.id), '127.0.0.1')
+    await finish_sequence(seq, FinishSequence(error_message='Something went very wrong!'), '127.0.0.1')
+
+    seq, _ = await create_sequence_and_start_event(app.id, SequenceDescriptor(task_id=arbitrary_task.id), '127.0.0.1')
+    await seq.update_meta({
+        'steps_total': 400,
+        'steps_done': 32,
+        'description': 'Doing very important things here!'
+    })
 
 
 async def clean_database():
-    for m in [ApplicationTask, Application, EventSequence]:
+    for m in [ApplicationTask, Application, EventSequence, Event]:
         await m.delete_all()
 
 
 async def populate():
+    use_settings(DebugSettings)
     await init_database()
     await clean_database()
     await populate_application("test_application_1")
@@ -139,6 +118,7 @@ async def populate():
 
 if __name__ == "__main__":
     if os.environ.get("TELEPHONIST_POPULATION") != "I KNOW WHAT I AM DOING":
+        print(os.environ)
         print("WARNING!!!", file=sys.stderr)
         print(
             "This script will COMPLETELY clear the database and then populate"

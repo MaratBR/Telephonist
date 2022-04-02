@@ -1,3 +1,6 @@
+import base64
+import hashlib
+import json
 import secrets
 import string
 from functools import partial
@@ -39,7 +42,7 @@ def decode_token_raw(token: str) -> dict:
     try:
         return jwt.decode(
             token,
-            get_settings().secret,
+            get_settings().secret.get_secret_value(),
             issuer=get_settings().jwt_issuer,
             algorithms=[jwt.ALGORITHMS.HS256],
             options={"require_sub": True},
@@ -51,7 +54,7 @@ def decode_token_raw(token: str) -> dict:
 def encode_token_raw(data: dict):
     return jwt.encode(
         {**data, "iss": get_settings().jwt_issuer},
-        get_settings().secret,
+        get_settings().secret.get_secret_value(),
     )
 
 
@@ -74,3 +77,11 @@ def parse_resource_key(key: str) -> Tuple[str, str]:
         return type_, id_
     except ValueError:
         raise ValueError("invalid resource key")
+
+
+def get_client_fingerprint(
+        ip_address: str,
+        user_agent: Optional[str],
+        extra: Optional[Any]
+) -> str:
+    return base64.urlsafe_b64encode(hashlib.sha256(json.dumps([ip_address, user_agent, extra]).encode('utf-8')).digest()).decode('ascii')

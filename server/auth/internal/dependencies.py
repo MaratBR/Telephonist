@@ -7,12 +7,14 @@ from starlette.status import HTTP_403_FORBIDDEN
 from server.auth.models.auth import User
 
 from .exceptions import AuthError, UserNotFound
+from .schema import bearer
 from .sessions import (
     UserSession,
     csrf_token,
     get_session_backend,
     session_cookie,
 )
+from .utils import get_client_fingerprint
 
 
 def require_session_cookie(session_id: str = Depends(session_cookie)):
@@ -79,3 +81,15 @@ def validate_csrf_token(
         )
     if token != session.csrf_token:
         raise HTTPException(HTTP_403_FORBIDDEN, "CSRF token mismatch")
+
+
+def client_fingerprint(
+    request: Request,
+    session_id: Optional[str] = Depends(get_session),
+    token: Optional[str] = Depends(bearer)
+) -> str:
+    return get_client_fingerprint(
+        request.client.host,
+        request.headers.get('user-agent'),
+        [session_id, token]
+    )

@@ -103,6 +103,7 @@ async def login_user(
                 user_agent=request.headers.get("user-agent"),
                 ip_address=request.client.host,
             ),
+            ttl=get_settings().session_lifetime.total_seconds(),
         )
         return LoginResponse(session_cookie.cookie, session_id)
     raise HTTPException(401, "User with given credentials not found")

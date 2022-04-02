@@ -25,7 +25,7 @@ async def issue_user_ws_ticket(token: UserSession = Depends(get_session)):
     }
 
 
-@ws_controller(ws_root_router, "/_ws/user-api/main")
+@ws_controller(ws_root_router, "/_ws/user/main")
 class UserHub(Hub):
     ticket: WSTicketModel[User] = WSTicket(User)
 
@@ -44,7 +44,7 @@ class UserHub(Hub):
     async def set_topics(self, topics: List[str]):
         new_topics = set()
         for t in topics:
-            if not CG.MONITORING.is_parent_of(t):
+            if not t.startswith("m/"):
                 continue
             new_topics.add(t)
             if t not in self._topics:
@@ -61,9 +61,7 @@ class UserHub(Hub):
         if isinstance(topic, str):
             topic = [topic]
         for t in topic:
-            if not CG.MONITORING.is_parent_of(t):
-                continue
-            if t in self._topics or t.strip() == "":
+            if not t.startswith("m/") or t in self._topics or t.strip() == "":
                 continue
             self._topics.add(t)
             await self.connection.add_to_group(t)
@@ -77,13 +75,13 @@ class UserHub(Hub):
             if t not in self._topics or t.strip() == "":
                 continue
             self._topics.remove(t)
-            await self.connection.remove_from_group(CG.MONITORING / t)
+            await self.connection.remove_from_group(t)
         await self._sync()
 
     @bind_message("unsuball")
     async def unsub_from_all_topics(self):
         for t in self._topics:
-            await self.connection.remove_from_group(CG.MONITORING / t)
+            await self.connection.remove_from_group(t)
         await self._sync()
 
     @bind_message("sync")

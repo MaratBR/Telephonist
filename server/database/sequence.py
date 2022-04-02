@@ -34,8 +34,8 @@ class EventSequence(BaseDocument):
     description: Optional[str]
     meta: Optional[dict[str, Any]]
     state: EventSequenceState = EventSequenceState.IN_PROGRESS
-    task_name: Optional[str]
-    task_id: Optional[UUID]
+    task_name: str
+    task_id: UUID
     expires_at: datetime = Field(
         default_factory=lambda: datetime.now() + timedelta(days=3)
     )
@@ -45,6 +45,13 @@ class EventSequence(BaseDocument):
     _created_at_validator = validator("created_at", allow_reuse=True)(
         convert_to_utc
     )
+
+    async def update_meta(self, meta: dict[str, Any]):
+        await self.update({
+            "$set": {
+                "meta": meta
+            }
+        })
 
     class Collection:
         name = "event_sequences"
