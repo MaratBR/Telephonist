@@ -1,10 +1,7 @@
 from beanie.odm.enums import SortDirection
-from fastapi import Depends, FastAPI, APIRouter
+from fastapi import APIRouter, Depends, FastAPI
 
-from server.auth.internal.dependencies import (
-    require_session,
-    validate_csrf_token,
-)
+from server.auth.internal.dependencies import require_session, validate_csrf_token
 from server.database import (
     Application,
     AppLog,
@@ -19,6 +16,7 @@ from server.user_api.auth import auth_router
 from server.user_api.events_router import events_router
 from server.user_api.logs_router import logs_router
 from server.user_api.tasks_router import tasks_router
+from server.user_api.users_router import users_router
 from server.user_api.ws_router import ws_router
 
 authentication_deps = [Depends(require_session), Depends(validate_csrf_token)]
@@ -37,6 +35,9 @@ user_api.include_router(
 )
 user_api.include_router(
     logs_router, dependencies=authentication_deps
+)
+user_api.include_router(
+    users_router, dependencies=authentication_deps
 )
 user_api.include_router(
     ws_router, prefix="/ws", dependencies=authentication_deps

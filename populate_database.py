@@ -12,14 +12,14 @@ from server.common.internal.application import (
     create_new_application,
     define_task,
 )
-from server.common.internal.events import SequenceDescriptor, finish_sequence, FinishSequence
-from server.database import Application, EventSequence, init_database, Event
-from server.database.task import (
-    ApplicationTask,
-    TaskBody,
-    TaskTypesRegistry,
+from server.common.internal.events import (
+    FinishSequence,
+    SequenceDescriptor,
+    finish_sequence,
 )
-from server.settings import use_settings, DebugSettings
+from server.database import Application, Event, EventSequence, init_database
+from server.database.task import ApplicationTask, TaskBody, TaskTypesRegistry
+from server.settings import DebugSettings, use_settings
 
 
 def catch_duplicate_errors(fn):

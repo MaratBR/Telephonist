@@ -1,12 +1,14 @@
 from datetime import datetime
-from typing import Optional, Union
+from typing import Any, Optional, Union
+from uuid import UUID, uuid4
 
-from beanie import Document, PydanticObjectId
+from beanie import Document, Indexed, PydanticObjectId
 from pydantic import EmailStr, Field, root_validator
 from starlette.datastructures import Address
 from starlette.requests import Request
 
 from server.auth.internal.utils import hash_password, verify_password
+from server.auth.sessions import UserSession
 from server.common.models import AppBaseModel, BaseDocument
 from server.database.registry import register_model
 from server.settings import get_settings
@@ -22,6 +24,8 @@ class User(BaseDocument):
     password_reset_required: bool = False
     last_password_changed: Optional[datetime] = None
     is_superuser: bool = True
+    is_blocked: bool = False
+    blocked_at: Optional[datetime] = None
 
     def set_password(self, password: str):
         self.password_hash = hash_password(password)
@@ -45,7 +49,7 @@ class User(BaseDocument):
         cls, username: str, include_disabled: bool = False
     ) -> Optional["User"]:
         q = cls if include_disabled else cls.find(cls.disabled == False)
-        q = cls.find(cls.username == username)
+        q = q.find(cls.username == username)
         q = q.limit(1)
         results = await q.to_list()
         if len(results) == 0:
@@ -59,6 +63,7 @@ class User(BaseDocument):
         password: str,
         email: Optional[EmailStr] = None,
         password_reset_required: bool = False,
+        is_superuser: bool = True
     ):
         user = cls(
             username=username,
@@ -67,6 +72,7 @@ class User(BaseDocument):
             password_hash=hash_password(password),
             email=email,
             password_reset_required=password_reset_required,
+            is_superuser=is_superuser
         )
         await user.save()
         return user
@@ -82,6 +88,13 @@ class User(BaseDocument):
                 password_reset_required=True,
             )
 
+    async def block(self):
+        if self.is_blocked:
+            return
+        self.is_blocked = True
+        self.blocked_at = datetime.utcnow()
+        await self.save()
+
     class Settings:
         use_state_management = True
 
@@ -96,6 +109,7 @@ class UserView(AppBaseModel):
     id: PydanticObjectId = Field(alias="_id")
     email: Optional[str]
     is_superuser: bool
+    is_blocked: bool = False
 
     @root_validator
     def _root_validator(cls, value: dict) -> dict:
@@ -109,6 +123,7 @@ class AuthLog(Document):
     user_id: PydanticObjectId
     ip_address: str
     user_agent: str
+    extra: dict[str, Any] = Field(default_factory=dict)
 
     class Collection:
         name = "auth_log"
@@ -120,6 +135,7 @@ class AuthLog(Document):
         user_id: PydanticObjectId,
         user_agent: str,
         ip_address_or_request: Union[str, Address, Request],
+        extra: Optional[dict[str, Any]] = None
     ):
         if isinstance(ip_address_or_request, Request):
             address = ip_address_or_request.client.host
@@ -132,4 +148,16 @@ class AuthLog(Document):
             event=event,
             user_id=user_id,
             ip_address=address,
+            extra=extra or {}
         ).insert()
+
+
+@register_model
+class PersistentUserSession(BaseDocument):
+    id: str
+    ref_id: Indexed(UUID, unique=True) = Field(default_factory=uuid4)
+    data: UserSession
+
+    class Collection:
+        name = "persistent_sessions"
+

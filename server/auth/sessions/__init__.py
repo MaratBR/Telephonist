@@ -31,6 +31,7 @@ class UserSession(AppBaseModel):
     logged_in_at: datetime = Field(default_factory=datetime.now)
     ip_address: str
     csrf_token: str = Field(default_factory=generate_csrf_token)
+    is_superuser: bool = False
 
 
 def get_session_backend() -> SessionsBackend:

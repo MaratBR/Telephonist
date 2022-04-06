@@ -1,6 +1,6 @@
 import random
 from datetime import datetime, timedelta
-from typing import Awaitable, Optional, ClassVar
+from typing import ClassVar, Optional
 
 import pymongo
 from pydantic import Field

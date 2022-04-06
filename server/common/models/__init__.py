@@ -1,7 +1,4 @@
-from server.common.models.base_model import (
-    AppBaseModel,
-    BaseDocument,
-)  # noqa: F401
+from server.common.models.base_model import AppBaseModel, BaseDocument  # noqa: F401
 from server.common.models.pagination import (  # noqa: F401
     OrderingDirection,
     Pagination,

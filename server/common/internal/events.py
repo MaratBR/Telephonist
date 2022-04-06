@@ -11,15 +11,14 @@ from server.common.models import AppBaseModel, Identifier
 from server.common.transit import dispatch, register_handler
 from server.common.transit.transit import BatchConfig
 from server.database import (
+    Application,
     ApplicationTask,
     ConnectionInfo,
     Counter,
     Event,
-    EventSequence, Application,
+    EventSequence,
 )
 from server.database.sequence import EventSequenceState
-
-from .utils import CG
 
 _logger = logging.getLogger("telephonist.api.events")
 

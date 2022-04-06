@@ -6,11 +6,10 @@ from fastapi import APIRouter, Depends
 
 from server import VERSION
 from server.auth.internal.dependencies import get_session
-from server.auth.internal.sessions import UserSession
 from server.auth.models.auth import User
+from server.auth.sessions import UserSession
 from server.common.channels import WSTicket, WSTicketModel
 from server.common.channels.hub import Hub, bind_message, ws_controller
-from server.common.internal.utils import CG
 from server.ws_root_router import ws_root_router
 
 ws_router = APIRouter()
@@ -35,7 +34,7 @@ class UserHub(Hub):
         self._topics: Set[str] = set()
 
     async def on_connected(self):
-        await self.connection.add_to_group(CG.AUTH / "user" / self.ticket.sub)
+        await self.connection.add_to_group(f"u/{self.ticket.sub}")
         await self.send_message(
             "introduction", {"server_version": VERSION, "authentication": "ok"}
         )

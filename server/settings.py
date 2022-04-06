@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     user_registration_unix_socket_only: bool = True
     unix_socket_name: str = "unix"
     hanging_connections_policy: str = "remove"
-    cookies_policy: str = "Strict"
+    cookies_policy: str = "None"
     use_non_secure_cookies: bool = False
     use_capped_collection_for_logs: bool = True
     logs_capped_collection_max_size_mb: int = 2**16  # 2**16 mb == 64 GiB

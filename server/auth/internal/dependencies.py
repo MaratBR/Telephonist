@@ -5,15 +5,15 @@ from starlette.requests import Request
 from starlette.status import HTTP_403_FORBIDDEN
 
 from server.auth.models.auth import User
-
-from .exceptions import AuthError, UserNotFound
-from .schema import bearer
-from .sessions import (
+from server.auth.sessions import (
     UserSession,
     csrf_token,
     get_session_backend,
     session_cookie,
 )
+
+from .exceptions import AuthError, UserNotFound
+from .schema import bearer
 from .utils import get_client_fingerprint
 
 
@@ -93,3 +93,9 @@ def client_fingerprint(
         request.headers.get('user-agent'),
         [session_id, token]
     )
+
+
+def superuser(session: UserSession = Depends(require_session)):
+    if not session.is_superuser:
+        raise HTTPException(401, "you're not a superuser!")
+    return session

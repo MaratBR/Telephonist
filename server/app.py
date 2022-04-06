@@ -12,17 +12,13 @@ from pydantic import ValidationError
 from starlette.middleware.cors import CORSMiddleware
 
 from server.application_api import application_api
-from server.auth.internal.sessions import (
+from server.auth.sessions import (
     InMemorySessionBackend,
     RedisSessionBackend,
     get_session_backend,
     init_sessions_backend,
 )
-from server.common.channels import (
-    get_channel_layer,
-    start_backplane,
-    stop_backplane,
-)
+from server.common.channels import get_channel_layer, start_backplane, stop_backplane
 from server.common.channels.backplane import (
     BackplaneBase,
     InMemoryBackplane,
@@ -54,7 +50,11 @@ class TelephonistApp(FastAPI):
             allow_origins=self.settings.cors_origin,
             allow_credentials=True,
             allow_methods=["*"],
-            allow_headers=["*"],
+            allow_headers=[
+                "X-CSRF-Token",
+                "Authorization",
+                "Content-Type",
+            ],
         )
         self._init_routers()
 

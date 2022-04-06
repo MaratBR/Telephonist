@@ -9,13 +9,8 @@ from pydantic import Field, ValidationError, parse_obj_as, validator
 from starlette import status
 
 from server.common.channels import get_channel_layer
-from server.common.internal.utils import CG, Errors
-from server.common.models import (
-    AppBaseModel,
-    Identifier,
-    IdProjection,
-    convert_to_utc,
-)
+from server.common.internal.utils import Errors
+from server.common.models import AppBaseModel, Identifier, IdProjection, convert_to_utc
 from server.database import Application, ConnectionInfo
 from server.database.task import (
     ApplicationTask,

@@ -5,7 +5,6 @@ from beanie import PydanticObjectId
 from pydantic import validator
 
 from server.common.channels import get_channel_layer
-from server.common.internal.utils import CG
 from server.common.models import AppBaseModel, convert_to_utc
 from server.database import AppLog, Severity
 

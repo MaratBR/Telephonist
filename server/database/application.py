@@ -9,12 +9,7 @@ from beanie.operators import Set as SetOp
 from pydantic import Field
 
 from server.auth.internal.utils import static_key_factory
-from server.common.models import (
-    AppBaseModel,
-    BaseDocument,
-    IdProjection,
-    SoftDeletes,
-)
+from server.common.models import AppBaseModel, BaseDocument, IdProjection, SoftDeletes
 from server.database.registry import register_model
 
 

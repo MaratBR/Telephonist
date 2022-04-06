@@ -1,5 +1,4 @@
-import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import fastapi
@@ -10,14 +9,15 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from server.auth.internal.dependencies import get_session, require_session
-from server.auth.internal.sessions import (
+from server.auth.internal.session import close_session, create_user_session
+from server.auth.internal.token import JWT, PasswordResetToken
+from server.auth.models.auth import AuthLog, PersistentUserSession, User, UserView
+from server.auth.sessions import (
     UserSession,
     get_session_backend,
     mask_csrf_token,
     session_cookie,
 )
-from server.auth.internal.token import JWT, PasswordResetToken
-from server.auth.models.auth import AuthLog, User, UserView
 from server.common.models import AppBaseModel
 from server.settings import get_settings
 
@@ -49,26 +49,12 @@ async def register_new_user(
     return {"detail": "New user registered successfully"}
 
 
-class LoginResponse(JSONResponse):
-    def __init__(self, cookie_name: str, session_id: str):
-        super(LoginResponse, self).__init__({"detail": "Logged in"})
-        self.session_id = session_id
-        self.set_cookie(
-            cookie_name,
-            session_id,
-            httponly=True,
-            max_age=get_settings().session_lifetime.total_seconds(),
-            secure=not get_settings().use_non_secure_cookies,
-            samesite=get_settings().cookies_policy,
-        )
-
-
 class PasswordResetRequiredResponse(JSONResponse):
     def __init__(self, reset_token: str, expiration: datetime):
         super(PasswordResetRequiredResponse, self).__init__(
             {
                 "detail": "Password reset required",
-                "password_reset": {"token": reset_token, "exp": expiration},
+                "password_reset": {"token": reset_token, "exp": expiration.isoformat()},
             }
         )
 
@@ -78,49 +64,75 @@ class LoginRequest(AppBaseModel):
     password: str
 
 
+@auth_router.post("/logout")
+async def logout(
+    session: Optional[UserSession] = Depends(get_session),
+    session_id: Optional[str] = Depends(session_cookie)
+):
+    if session and session_id:
+        await close_session(session_id)
+    return {"detail": "Bye, bye!"}
+
+
 @auth_router.post("/login")
 async def login_user(
     request: Request,
+    response: Response,
     credentials: LoginRequest = Body(...),
-    session: UserSession = Depends(get_session),
-    session_id: str = Depends(session_cookie),
+    session: Optional[UserSession] = Depends(get_session),
+    session_id: Optional[str] = Depends(session_cookie),
 ):
     user = await User.find_user_by_credentials(
         credentials.username, credentials.password
     )
-    if session and session.user_id == user.id:
-        return LoginResponse(session_cookie.cookie, session_id)
-    if user is not None:
-        if user.password_reset_required:
-            exp = datetime.now() + timedelta(minutes=10)
-            password_token = PasswordResetToken(sub=user.id, exp=exp).encode()
-            return PasswordResetRequiredResponse(password_token, exp)
-        session_id = secrets.token_urlsafe(20)
-        await get_session_backend().set(
-            session_id,
-            UserSession(
-                user_id=user.id,
-                user_agent=request.headers.get("user-agent"),
-                ip_address=request.client.host,
-            ),
-            ttl=get_settings().session_lifetime.total_seconds(),
-        )
-        return LoginResponse(session_cookie.cookie, session_id)
-    raise HTTPException(401, "User with given credentials not found")
+    if user is None:
+        raise HTTPException(401, "User with given credentials not found")
+    if user.is_blocked:
+        raise HTTPException(401, "User is blocked")
+
+    if session and session_id:
+        await close_session(session_id)
+
+    if user.password_reset_required:
+        exp = datetime.utcnow().replace(tzinfo=timezone.utc) + timedelta(minutes=10)
+        password_token = PasswordResetToken(sub=user.id, exp=exp).encode()
+        return PasswordResetRequiredResponse(password_token, exp)
+
+    session_obj = await create_user_session(request, user)
+    session_id = session_obj.id
+    response.set_cookie(
+        session_cookie.cookie,
+        session_id,
+        httponly=True,
+        max_age=get_settings().session_lifetime.total_seconds(),
+        secure=get_settings().cookies_policy.lower() == "none" or not get_settings().use_non_secure_cookies,
+        samesite=get_settings().cookies_policy,
+    )
+
+    return {
+        "user": UserView(**user.dict(by_alias=True)),
+        "csrf": mask_csrf_token(session_obj.data.csrf_token),
+        "detail": "Logged in successfully",
+        "session_ref_id": session_obj.ref_id
+    }
 
 
 @auth_router.get("/whoami")
-async def whoami(session_data: UserSession = Depends(get_session)):
+async def whoami(
+    session_data: UserSession = Depends(get_session),
+    session_id: str = Depends(session_cookie)
+):
     if session_data is None:
         return {
             "user": None,
-            "session": None,
+            "session_ref_id": None,
             "detail": "Who the heck are you?",
         }
     user = await User.get(session_data.user_id)
+    session_obj = await PersistentUserSession.find_one({"_id": session_id})
     return {
         "user": UserView(**user.dict(by_alias=True)),
-        "session": session_data,
+        "session_ref_id": None if session_obj is None else session_obj.ref_id,
         "detail": "Here's who you are!",
     }
 

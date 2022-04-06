@@ -5,7 +5,7 @@ from fastapi.security.base import SecurityBase
 from pydantic import Field
 from starlette.requests import Request
 
-from server.auth.internal.sessions.utils import unmask_token
+from server.auth.sessions.utils import unmask_token
 
 
 class CSRFToken:

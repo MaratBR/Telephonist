@@ -19,10 +19,7 @@ from server.common.channels.hub import (
 from server.common.internal.utils import CG
 from server.common.models import AppBaseModel
 from server.database import Application
-from server.database.connection_info import (
-    ApplicationClientInfo,
-    ConnectionInfo,
-)
+from server.database.connection_info import ApplicationClientInfo, ConnectionInfo
 from server.database.server import Server
 from server.ws_root_router import ws_root_router
 

@@ -1,10 +1,7 @@
 import time
 from typing import Optional, Type
 
-from server.auth.internal.sessions._backend import (
-    SessionsBackend,
-    TSessionData,
-)
+from server.auth.sessions._backend import SessionsBackend, TSessionData
 
 
 class InMemorySessionBackend(SessionsBackend):
