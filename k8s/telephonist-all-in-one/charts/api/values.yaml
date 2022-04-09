@@ -1,0 +1,53 @@
+replicaCount: 3
+
+image:
+  repository: maratbr/telephonist
+  pullPolicy: Always
+
+imagePullSecrets: []
+nameOverride: "telephonist-api"
+fullnameOverride: "telephonist-api"
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podSecurityContext: {}
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 5789
+
+ingress:
+  enabled: false
+
+resources: {}
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+env:
+  - name: TELEPHONIST_DB_URL
+    value: mongodb://telephonist-mongodb:27017
+  - name: TELEPHONIST_REDIS_URL
+    value: redis://telephonist-redis:6379
+  - name: TELEPHONIST_COOKIES_POLICY
+    value: Strict
+  - name: TELEPHONIST_DISABLE_SSL
+    value: "True"
+  - name: TELEPHONIST_PROXY_IP
+    value: "*"
+  - name: TELEPHONIST_USE_NON_SECURE_COOKIES
+    value: "True"
+  - name: TELEPHONIST_SECRET
+    value: "SECRETSECRETSECRET"

@@ -1,0 +1,52 @@
+version: "3"
+volumes:
+  mongodb_data:
+services:
+  database:
+    image: mongo
+    logging:
+      driver: none
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - bridge
+  redis:
+    image: redis
+    networks:
+      - bridge
+  api:
+    depends_on:
+      - database
+      - redis
+    image: maratbr/telephonist
+    networks:
+      - bridge
+    environment:
+      TELEPHONIST_DB_URL: mongodb://database:27017
+      TELEPHONIST_REDIS_URL: redis://redis:6379
+      TELEPHONIST_COOKIES_POLICY: Strict
+      TELEPHONIST_DISABLE_SSL: "True"
+      TELEPHONIST_PROXY_IP: "*"
+      # disable ssl for this case
+      TELEPHONIST_USE_NON_SECURE_COOKIES: "True"
+      TELEPHONIST_SECRET: ${SECRET}
+  ui:
+    image: maratbr/telephonist-admin:latest-proxy
+    networks:
+      bridge:
+        ipv4_address: 172.28.0.70
+    depends_on:
+      - api
+    environment:
+      API_URL: /
+      API_SERVER: api:5789
+    ports:
+      - "5000:80"
+networks:
+  bridge:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
+          ip_range: 172.28.0.0/16

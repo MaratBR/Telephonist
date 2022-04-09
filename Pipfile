@@ -21,7 +21,6 @@ arrow = "*"
 ujson = "*"
 orjson = "*"
 fastapi-cache2 = "*"
-broadcaster = "*"
 httpagentparser = "*"
 
 [dev-packages]

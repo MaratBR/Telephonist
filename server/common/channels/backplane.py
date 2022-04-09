@@ -51,6 +51,10 @@ class BackplaneBase(ABC):
         pass
 
     @abstractmethod
+    async def ping(self):
+        ...
+
+    @abstractmethod
     async def start(self):
         ...
 
@@ -139,6 +143,10 @@ class InMemoryBackplane(BackplaneBase):
         if channel in self._channels and queue in self._channels[channel]:
             self._channels[channel].remove(queue)
 
+    async def ping(self):
+        pass
+
+
 
 class RedisBackplane(BackplaneBase):
     def __init__(self, redis: Redis):
@@ -156,6 +164,9 @@ class RedisBackplane(BackplaneBase):
 
     async def start(self):
         pass
+
+    async def ping(self):
+        await self._redis.ping()
 
     async def publish_many(self, channels: List[str], data: Any):
         encoded = encode_object(data)

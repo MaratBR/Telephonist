@@ -12,6 +12,7 @@ class EnvSettings(BaseSettings):
     WORKERS: int = 1
     LOG_LEVEL: str = Field(default="info")
     PORT: int = Field(default=5789, ge=1024, lt=32768)
+    PROXY_IP: Optional[str] = None
 
     class Config:
         env_prefix = "TELEPHONIST_"
@@ -20,6 +21,9 @@ class EnvSettings(BaseSettings):
 def main():
     prod_settings = EnvSettings()
     args = {}
+    print(
+        f'Running on port {prod_settings.PORT}'
+    )
     if not prod_settings.DISABLE_SSL:
         assert prod_settings.SSL_KEY and prod_settings.SSL_CERT, (
             "You must either provide ssl key path and ssl certificate through"
@@ -38,6 +42,9 @@ def main():
         port=prod_settings.PORT,
         log_level=prod_settings.LOG_LEVEL,
         workers=prod_settings.WORKERS,
+        host="0.0.0.0",
+        forwarded_allow_ips=prod_settings.PROXY_IP,
+        proxy_headers=True,
         **args
     )
 

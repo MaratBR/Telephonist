@@ -1,8 +1,10 @@
 import logging
 import sys
+import time
 from typing import Optional, Type
 
 import aioredis
+import async_timeout
 from fastapi import FastAPI
 from fastapi.responses import ORJSONResponse
 from fastapi_cache import FastAPICache
@@ -10,12 +12,12 @@ from fastapi_cache.backends.inmemory import InMemoryBackend
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import ValidationError
 from starlette.middleware.cors import CORSMiddleware
+from starlette.requests import Request
 
 from server.application_api import application_api
 from server.auth.sessions import (
     InMemorySessionBackend,
     RedisSessionBackend,
-    get_session_backend,
     init_sessions_backend,
 )
 from server.common.channels import get_channel_layer, start_backplane, stop_backplane
@@ -61,9 +63,53 @@ class TelephonistApp(FastAPI):
         self.add_event_handler("startup", self._on_startup)
         self.add_event_handler("shutdown", self._on_shutdown)
         self.add_api_route("/", self._index)
+        self.add_api_route("/hc", self._hc)
+        self.add_api_route("/api/__debug__", self.__debug_route__)
+
+    @staticmethod
+    async def __debug_route__(request: Request):
+        return ORJSONResponse({
+            "headers": dict(request.headers),
+            "client": [
+                request.client.host, request.client.port
+            ]
+        })
 
     async def _index(self):
         return ORJSONResponse({"detail": "OK"})
+
+    @staticmethod
+    async def _backplane_hc():
+        now = time.time_ns()
+        try:
+            async with async_timeout.timeout(.5):
+                await get_backplane().ping()
+            latency = (time.time_ns() - now) / 1000000
+            d = {
+                "healthy": True,
+                "latency_ms": latency,
+            }
+        except Exception as exc:
+            d = {
+                "healthy": False,
+                "exception": {
+                    "type": type(exc).__name__
+                }
+            }
+
+        d = {
+            "type": type(get_backplane()).__name__,
+            "status": d
+        }
+        return d
+
+    async def _hc(self):
+
+        return ORJSONResponse({
+            "modules": {
+                "backplane": await self._backplane_hc()
+            }
+        })
 
     async def _on_startup(self):
         try:
@@ -120,22 +166,6 @@ class TelephonistApp(FastAPI):
         self.include_router(ws_root_router)
         self.include_router(user_api, prefix="/api/user-v1")
         self.include_router(application_api, prefix="/api/application-v1")
-        self.add_api_route("/hc", self._health_check)
-
-    async def _health_check(self):
-        return ORJSONResponse(
-            {
-                "modules": {
-                    "database": "?",
-                    "backplane": {
-                        "type": type(get_backplane()).__name__,
-                    },
-                    "session_backend": {
-                        "type": type(get_session_backend()).__name__
-                    },
-                }
-            }
-        )
 
 
 def _use_settings(settings: Type[Settings]):

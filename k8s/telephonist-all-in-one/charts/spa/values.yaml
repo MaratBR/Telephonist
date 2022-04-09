@@ -1,0 +1,44 @@
+replicaCount: 1
+
+image:
+  repository: maratbr/telephonist-admin
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+
+imagePullSecrets: []
+nameOverride: "telephonist-admin"
+fullnameOverride: "telephonist-admin"
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podSecurityContext: {}
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+
+resources: {}
+env:
+  - name: API_URL
+    value: /
+  - name: NGINX_SERVER_NAME
+    value: _
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

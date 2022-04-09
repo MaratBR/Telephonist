@@ -1,3 +1,5 @@
+import datetime
+
 from beanie.odm.enums import SortDirection
 from fastapi import APIRouter, Depends, FastAPI
 
@@ -69,6 +71,16 @@ async def get_stats():
     )
     return {
         "counters": counters,
+        "in_progress_sequences": {
+            "count": await EventSequence.find(
+                EventSequence.state == EventSequenceState.IN_PROGRESS,
+                EventSequence.created_at >= datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            ).count(),
+            "list": await EventSequence.find(
+                EventSequence.state == EventSequenceState.IN_PROGRESS,
+                EventSequence.created_at >= datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            ).sort(("_id", SortDirection.DESCENDING)).limit(20).to_list()
+        },
         "failed_sequences": sequences,
         "db": {
             "stats": {

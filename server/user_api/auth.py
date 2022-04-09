@@ -119,14 +119,16 @@ async def login_user(
 
 @auth_router.get("/whoami")
 async def whoami(
+    request: Request,
     session_data: UserSession = Depends(get_session),
-    session_id: str = Depends(session_cookie)
+    session_id: str = Depends(session_cookie),
 ):
     if session_data is None:
         return {
             "user": None,
             "session_ref_id": None,
             "detail": "Who the heck are you?",
+            "ip": [request.client.host, request.client.port]
         }
     user = await User.get(session_data.user_id)
     session_obj = await PersistentUserSession.find_one({"_id": session_id})
@@ -134,6 +136,7 @@ async def whoami(
         "user": UserView(**user.dict(by_alias=True)),
         "session_ref_id": None if session_obj is None else session_obj.ref_id,
         "detail": "Here's who you are!",
+        "ip": [request.client.host, request.client.port]
     }
 
 

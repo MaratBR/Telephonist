@@ -228,6 +228,7 @@ async def create_sequence_and_start_event(
         description=descriptor.description,
         task_name=task_name,
         task_id=descriptor.task_id,
+        connection_id=descriptor.connection_id
     )
     await sequence.insert()
 
@@ -264,12 +265,6 @@ async def finish_sequence(
         sequence.state = EventSequenceState.SUCCEEDED
     sequence.meta = {}  # TODO ????
     await sequence.replace()
-    await dispatch(
-        SequenceFinished(
-            sequence_id=sequence.id, app_id=sequence.app_id, is_skipped=False
-        )
-    )
-
     stop_event = (
         CANCELLED_EVENT
         if finish_request.is_skipped

@@ -1,12 +1,12 @@
 from starlette.testclient import TestClient
 
+from server.auth.sessions import session_cookie
 
-def get_user_token(client: TestClient):
-    if hasattr(client, "__user_token__"):
-        return client.__user_token__
-    d = client.post(
-        "/auth/token",
-        json={"login": "TEST1", "password": "TEST1", "hybrid": False},
-    ).json()
-    setattr(client, "__user_token__", d["access_token"])
-    return d["access_token"]
+
+def auth_client(client: TestClient):
+    resp = client.post("/api/user-v1/auth/login", json={"username": "TEST1", "password": "TEST1"})
+    assert resp.status_code == 200
+    print(resp.cookies)
+    print(resp.headers)
+    assert session_cookie.cookie in client.cookies, f'Session cookie is missing: {", ".join(client.cookies.keys())}'
+    return client

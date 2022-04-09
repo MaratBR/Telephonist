@@ -1,14 +1,15 @@
 from starlette.testclient import TestClient
 
-from tests.utils import get_user_token
+from tests.utils import auth_client
 
 
 def test_create_application(client: TestClient):
-    client.headers["authorization"] = "Bearer " + get_user_token(client)
+    auth_client(client)
     resp = client.post(
-        "/user-api/applications",
+        "/api/user-v1/applications",
         json={
-            "name": "My application",
+            "display_name": "My application",
+            "name": "applications",
             "description": "This is a new application",
             "tags": ["new", "important"],
         },
@@ -19,10 +20,11 @@ def test_create_application(client: TestClient):
     assert resp.status_code == 200
     data = resp.json()["app"]
     assert data["_id"] == app_id
-    assert data["name"] == "My application"
+    assert data["name"] == "application"
+    assert data["display_name"] == "My application"
     assert data["description"] == "This is a new application"
 
-    resp = client.get("/user-api/applications")
+    resp = client.get("/api/user-v1/applications")
     data = resp.json()
     assert "result" in data and isinstance(data["result"], list)
     assert len(data["result"]) >= 1 and any(
