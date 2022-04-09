@@ -25,6 +25,9 @@ class UsersPagination(Pagination):
     descending_by_default = True
     default_order_by = "username"
     ordered_by_options = {"_id", "username"}
+    fields_mapping = {
+        "username": "normalized_username"
+    }
 
 
 @users_router.get("")
@@ -58,7 +61,7 @@ async def get_user(user_id: Union[PydanticObjectId, str]):
         try:
             q = User.find_one({"_id": PydanticObjectId(user_id)})
         except InvalidId:
-            q = User.find_one({"username": user_id})
+            q = User.find_one({"normalized_username": user_id.upper()})
     else:
         q = User.find_one({"_id": user_id})
     user = await q

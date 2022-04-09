@@ -90,12 +90,6 @@ class DefinedTaskConfig(AppBaseModel):
     tasks: List[application_internal.DefinedTask]
 
 
-@rest_router.post("/defined-tasks/synchronize", dependencies=[APPLICATION])
-async def sync_tasks_route(
-    app=APPLICATION, body: DefinedTaskConfig = Body(...)
-):
-    return await application_internal.sync_tasks(app, body.tasks)
-
 
 @rest_router.post("/defined-tasks/check", dependencies=[APPLICATION])
 async def find_defined_tasks_route(

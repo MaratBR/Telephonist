@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from server.app import create_debug_app, TelephonistApp
 from server.common.channels.backplane import InMemoryBackplane
 from server.settings import TestingSettings, get_settings, use_settings
+from tests.utils import do_auth_client
 
 MONGODB_PORT = 27222
 
@@ -58,11 +59,22 @@ def create_test_app():
 
 
 @pytest.fixture(scope="session")
-def client_no_init(mongodb_server):
-    return TestClient(create_test_app(), base_url="https://localhost.ru/")
+def application():
+    return create_test_app()
 
 
-@pytest.yield_fixture(scope="session")
+@pytest.fixture()
+def client_no_init(mongodb_server, application):
+    return TestClient(application, base_url="https://localhost.ru/")
+
+
+@pytest.yield_fixture()
 def client(client_no_init: TestClient):
     with client_no_init:
         yield client_no_init
+
+
+@pytest.fixture()
+def auth_client(client: TestClient):
+    do_auth_client(client)
+    return client

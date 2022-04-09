@@ -147,7 +147,6 @@ class InMemoryBackplane(BackplaneBase):
         pass
 
 
-
 class RedisBackplane(BackplaneBase):
     def __init__(self, redis: Redis):
         super(RedisBackplane, self).__init__()
@@ -179,9 +178,9 @@ class RedisBackplane(BackplaneBase):
                 if message is None or message["type"] != "message":
                     continue
                 try:
-                    data = decode_object(message["d"])
+                    data = decode_object(message["data"])
                 except Exception as exc:
-                    _logger.exception(str(exc))
+                    _logger.exception(f"{exc}, {message}")
                     continue  # TODO
 
                 await self._dispatch_message(message["channel"].decode(), data)

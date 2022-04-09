@@ -34,6 +34,7 @@ class TokenModel(AppBaseModel):
             if not hasattr(cls, "__token_type__"):
                 setattr(cls, "__token_type__", cls.__name__)
             TokenModel.registry[cls.__token_type__] = cls
+        return super(TokenModel, cls).__init_subclass__(**kwargs)
 
     @classmethod
     def decode(cls: Type[T], token_string: str) -> T:
@@ -43,8 +44,11 @@ class TokenModel(AppBaseModel):
             )
         return cls._decode_types(token_string, allowed_types=[cls])
 
+    def token_dict(self):
+        return self.dict(by_alias=True)
+
     def encode(self):
-        data = self.dict(by_alias=True)
+        data = self.token_dict()
         data["__token_type"] = self.__class__.__token_type__
         return encode_token_raw(data)
 

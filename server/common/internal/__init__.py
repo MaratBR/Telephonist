@@ -9,7 +9,6 @@ from .application import (
     get_task_or_404,
     notify_connection_changed,
     notify_task_changed,
-    sync_tasks,
 )
 from .events import (
     create_event,

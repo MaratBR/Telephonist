@@ -35,7 +35,7 @@ class InMemorySessionBackend(SessionsBackend):
             exp, value = pair
             if exp is None:
                 return value
-            if exp < time.time():
+            if exp > time.time():
                 return value
             else:
                 del self._store[session_id]

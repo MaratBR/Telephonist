@@ -18,7 +18,7 @@ from server.common.channels.hub import (
 )
 from server.common.internal.utils import CG
 from server.common.models import AppBaseModel
-from server.database import Application
+from server.database import Application, ApplicationTask
 from server.database.connection_info import ApplicationClientInfo, ConnectionInfo
 from server.database.server import Server
 from server.ws_root_router import ws_root_router
@@ -137,6 +137,7 @@ class AppReportHub(Hub):
                 ).count(),
             },
         )
+        await self.synchronize_tasks()
 
         if message.subscriptions:
             await self.set_subscriptions(message.subscriptions)
@@ -170,11 +171,11 @@ class AppReportHub(Hub):
 
     @bind_message("synchronize")
     @_if_ready_only
-    async def synchronize_tasks(self, tasks: List[_internal.DefinedTask]):
-        tasks = await _internal.sync_tasks(
-            await self._get_application(), tasks
-        )
-        await self.send_message("tasks", tasks)
+    async def synchronize_tasks(self):
+        tasks = await ApplicationTask.not_deleted().find(ApplicationTask.app_id == self.ticket.sub).to_list()
+        tasks = await ApplicationTask.find(ApplicationTask.app_id == self.ticket.sub).to_list()
+
+        await self.send_message("tasks", [_internal.DefinedTask.from_db(t) for t in tasks])
 
     @bind_message("send_log")
     @_if_ready_only

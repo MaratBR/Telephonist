@@ -95,10 +95,10 @@ class HandlerInfo(NamedTuple):
                 " default value allowed"
             )
         if len(message_params) == 0:
-            return None
+            return
         annotation = message_params[0].annotation
         if annotation is inspect.Parameter.empty:
-            annotation = Any
+            annotation = type(None)
         return annotation
 
     @classmethod

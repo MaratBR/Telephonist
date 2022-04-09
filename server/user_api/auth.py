@@ -29,26 +29,6 @@ class NewUserInfo(AppBaseModel):
     password: str
 
 
-@auth_router.post("/register")
-async def register_new_user(
-    info: NewUserInfo,
-    host: Optional[str] = Header(None),
-):
-    # TODO ????
-    if (
-        get_settings().user_registration_unix_socket_only
-        and host != get_settings().unix_socket_name
-    ):
-        raise HTTPException(
-            403, "User registration is only allowed through unix socket"
-        )
-    try:
-        await User.create_user(info.username, info.password)
-    except DuplicateKeyError:
-        raise HTTPException(409, "User with given username already exists")
-    return {"detail": "New user registered successfully"}
-
-
 class PasswordResetRequiredResponse(JSONResponse):
     def __init__(self, reset_token: str, expiration: datetime):
         super(PasswordResetRequiredResponse, self).__init__(
@@ -104,9 +84,9 @@ async def login_user(
         session_cookie.cookie,
         session_id,
         httponly=True,
-        max_age=get_settings().session_lifetime.total_seconds(),
+        max_age=int(get_settings().session_lifetime.total_seconds()),
         secure=get_settings().cookies_policy.lower() == "none" or not get_settings().use_non_secure_cookies,
-        samesite=get_settings().cookies_policy,
+        samesite=get_settings().cookies_policy
     )
 
     return {
@@ -165,10 +145,6 @@ async def logout(
                     user_agent=request.headers.get("user-agent"),
                 )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-class RevokeRefreshToken(AppBaseModel):
-    token: str
 
 
 class ResetPassword(AppBaseModel):

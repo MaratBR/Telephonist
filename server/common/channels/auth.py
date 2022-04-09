@@ -11,13 +11,14 @@ from server.auth.internal.token import JWT, TokenModel
 from server.common.channels.wscode import WSC_UNAUTHORIZED
 
 
-class ConcreteWSTicket(abc.ABC, TokenModel):
+class ConcreteWSTicket(TokenModel):
     sub: PydanticObjectId
     connection_name: Optional[str]
 
-    @validator("sub")
-    def _stringify_sub(cls, value):
-        return str(value)
+    def token_dict(self):
+        d = super(ConcreteWSTicket, self).token_dict()
+        d["sub"] = str(d["sub"])
+        return d
 
 
 _ws_ticket_cache = {}

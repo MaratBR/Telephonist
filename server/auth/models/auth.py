@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Any, Optional, Union
 from uuid import UUID, uuid4
 
+import pymongo
 from beanie import Document, Indexed, PydanticObjectId
 from pydantic import EmailStr, Field, root_validator
 from starlette.datastructures import Address
@@ -100,7 +101,7 @@ class User(BaseDocument):
 
     class Collection:
         name = "users"
-        indexes = ["email", "disabled", "normalized_username"]
+        indexes = ["email", "disabled", pymongo.IndexModel("normalized_username", unique=True)]
 
 
 class UserView(AppBaseModel):
