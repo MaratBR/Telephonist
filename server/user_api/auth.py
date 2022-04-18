@@ -2,8 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import fastapi
-from fastapi import Body, Depends, Header, HTTPException
-from pymongo.errors import DuplicateKeyError
+from fastapi import Body, Depends, HTTPException
 from starlette import status
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -11,7 +10,12 @@ from starlette.responses import JSONResponse, Response
 from server.auth.internal.dependencies import get_session, require_session
 from server.auth.internal.session import close_session, create_user_session
 from server.auth.internal.token import JWT, PasswordResetToken
-from server.auth.models.auth import AuthLog, PersistentUserSession, User, UserView
+from server.auth.models.auth import (
+    AuthLog,
+    PersistentUserSession,
+    User,
+    UserView,
+)
 from server.auth.sessions import (
     UserSession,
     get_session_backend,
@@ -34,7 +38,10 @@ class PasswordResetRequiredResponse(JSONResponse):
         super(PasswordResetRequiredResponse, self).__init__(
             {
                 "detail": "Password reset required",
-                "password_reset": {"token": reset_token, "exp": expiration.isoformat()},
+                "password_reset": {
+                    "token": reset_token,
+                    "exp": expiration.isoformat(),
+                },
             }
         )
 
@@ -47,7 +54,7 @@ class LoginRequest(AppBaseModel):
 @auth_router.post("/logout")
 async def logout(
     session: Optional[UserSession] = Depends(get_session),
-    session_id: Optional[str] = Depends(session_cookie)
+    session_id: Optional[str] = Depends(session_cookie),
 ):
     if session and session_id:
         await close_session(session_id)
@@ -74,7 +81,9 @@ async def login_user(
         await close_session(session_id)
 
     if user.password_reset_required:
-        exp = datetime.utcnow().replace(tzinfo=timezone.utc) + timedelta(minutes=10)
+        exp = datetime.utcnow().replace(tzinfo=timezone.utc) + timedelta(
+            minutes=10
+        )
         password_token = PasswordResetToken(sub=user.id, exp=exp).encode()
         return PasswordResetRequiredResponse(password_token, exp)
 
@@ -85,15 +94,16 @@ async def login_user(
         session_id,
         httponly=True,
         max_age=int(get_settings().session_lifetime.total_seconds()),
-        secure=get_settings().cookies_policy.lower() == "none" or not get_settings().use_non_secure_cookies,
-        samesite=get_settings().cookies_policy
+        secure=get_settings().cookies_policy.lower() == "none"
+        or not get_settings().use_non_secure_cookies,
+        samesite=get_settings().cookies_policy,
     )
 
     return {
         "user": UserView(**user.dict(by_alias=True)),
         "csrf": mask_csrf_token(session_obj.data.csrf_token),
         "detail": "Logged in successfully",
-        "session_ref_id": session_obj.ref_id
+        "session_ref_id": session_obj.ref_id,
     }
 
 
@@ -108,7 +118,7 @@ async def whoami(
             "user": None,
             "session_ref_id": None,
             "detail": "Who the heck are you?",
-            "ip": [request.client.host, request.client.port]
+            "ip": [request.client.host, request.client.port],
         }
     user = await User.get(session_data.user_id)
     session_obj = await PersistentUserSession.find_one({"_id": session_id})
@@ -116,7 +126,7 @@ async def whoami(
         "user": UserView(**user.dict(by_alias=True)),
         "session_ref_id": None if session_obj is None else session_obj.ref_id,
         "detail": "Here's who you are!",
-        "ip": [request.client.host, request.client.port]
+        "ip": [request.client.host, request.client.port],
     }
 
 

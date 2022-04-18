@@ -18,7 +18,7 @@ from server.database import (
     Event,
     EventSequence,
 )
-from server.database.sequence import EventSequenceState
+from server.database.sequence import EventSequenceState, TriggeredBy
 
 _logger = logging.getLogger("telephonist.api.events")
 
@@ -51,6 +51,15 @@ class EventDescriptor(AppBaseModel):
     sequence_id: Optional[PydanticObjectId]
 
 
+class NewEvent(AppBaseModel):
+    id: PydanticObjectId
+
+
+@register_handler(batch=BatchConfig(max_batch_size=5000, delay=3))
+async def _on_new_events(events: list[NewEvent]):
+    await Counter.inc_counter("events", len(events))
+
+
 async def create_event(
     app: Application, descriptor: EventDescriptor, ip_address: str
 ):
@@ -72,7 +81,7 @@ async def create_event(
         event_key = f"{app.name}/_/{descriptor.name}"
         task_name = None
 
-    return Event(
+    event = Event(
         app_id=app.id,
         event_type=descriptor.name,
         event_key=event_key,
@@ -81,10 +90,14 @@ async def create_event(
         task_name=task_name,
         sequence_id=descriptor.sequence_id,
     )
+    await event.insert()
+    await dispatch(NewEvent(id=event.id))
+    return event
 
 
 async def notify_events(*events: Event):
     for event in events:
+        _logger.debug(f"notifying about events {event.event_key} ({event})")
         groups = [
             f"m/appEvents/{event.app_id}",
             f"e/key/{event.event_key}",
@@ -134,6 +147,7 @@ class SequenceDescriptor(AppBaseModel):
     task_id: Union[UUID, str]
     custom_name: Optional[str]
     connection_id: Optional[UUID]
+    triggered_by: Optional[TriggeredBy]
 
 
 @register_handler(batch=BatchConfig(max_batch_size=100, delay=1))
@@ -228,7 +242,8 @@ async def create_sequence_and_start_event(
         description=descriptor.description,
         task_name=task_name,
         task_id=descriptor.task_id,
-        connection_id=descriptor.connection_id
+        connection_id=descriptor.connection_id,
+        triggered_by=descriptor.triggered_by,
     )
     await sequence.insert()
 
@@ -242,6 +257,7 @@ async def create_sequence_and_start_event(
         app_id=sequence.app_id,
     )
     await start_event.insert()
+    await dispatch(NewEvent(id=start_event.id))
     return sequence, start_event
 
 
@@ -278,7 +294,7 @@ async def finish_sequence(
             task_name=sequence.task_name,
             task_id=sequence.task_id,
             event_type=event_type,
-            event_key=f"{event_type}@{sequence.task_name}"
+            event_key=f"{sequence.task_name}/{event_type}"
             if sequence.task_name
             else event_type,
             publisher_ip=ip_address,
@@ -289,14 +305,14 @@ async def finish_sequence(
             STOP_EVENT,  # generic stop event
         )
     ]
+    for e in events:
+        await e.insert()
+        await dispatch(NewEvent(id=e.id))
 
     if finish_request.error_message:
         _logger.warning(
             f"sequence {sequence.name} ({sequence.id}) errored:"
             f" {finish_request.error_message}"
         )
-
-    for event in events:
-        await event.insert()
 
     return events

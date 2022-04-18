@@ -21,9 +21,7 @@ class EnvSettings(BaseSettings):
 def main():
     prod_settings = EnvSettings()
     args = {}
-    print(
-        f'Running on port {prod_settings.PORT}'
-    )
+    print(f"Running on port {prod_settings.PORT}")
     if not prod_settings.DISABLE_SSL:
         assert prod_settings.SSL_KEY and prod_settings.SSL_CERT, (
             "You must either provide ssl key path and ssl certificate through"
@@ -45,7 +43,7 @@ def main():
         host="0.0.0.0",
         forwarded_allow_ips=prod_settings.PROXY_IP,
         proxy_headers=True,
-        **args
+        **args,
     )
 
 

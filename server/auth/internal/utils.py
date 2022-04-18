@@ -80,8 +80,10 @@ def parse_resource_key(key: str) -> Tuple[str, str]:
 
 
 def get_client_fingerprint(
-        ip_address: str,
-        user_agent: Optional[str],
-        extra: Optional[Any]
+    ip_address: str, user_agent: Optional[str], extra: Optional[Any]
 ) -> str:
-    return base64.urlsafe_b64encode(hashlib.sha256(json.dumps([ip_address, user_agent, extra]).encode('utf-8')).digest()).decode('ascii')
+    return base64.urlsafe_b64encode(
+        hashlib.sha256(
+            json.dumps([ip_address, user_agent, extra]).encode("utf-8")
+        ).digest()
+    ).decode("ascii")

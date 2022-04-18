@@ -1,31 +1,26 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, List, Optional, Union
 from uuid import UUID, uuid4
 
 from beanie import PydanticObjectId
-from beanie.operators import In
 from fastapi import HTTPException
-from pydantic import Field, ValidationError, parse_obj_as, validator
+from pydantic import Field, validator
 from starlette import status
 
 from server.common.channels import get_channel_layer
 from server.common.internal.utils import Errors
-from server.common.models import AppBaseModel, Identifier, IdProjection, convert_to_utc
-from server.database import Application, ConnectionInfo
-from server.database.task import (
-    ApplicationTask,
-    TaskBody,
-    TaskTrigger,
-    TaskTypesRegistry,
-)
+from server.common.models import AppBaseModel, Identifier, convert_to_utc
+from server.database import Application, ConnectionInfo, EventSequence
+from server.database.task import ApplicationTask, TaskBody, TaskTrigger
 
 
 class CreateApplication(AppBaseModel):
     name: Identifier
     display_name: Optional[str]
-    description: Optional[str] = Field(max_length=3000)
+    description: Optional[str] = Field(max_length=3000, default=None)
     tags: Optional[List[str]]
     disabled: bool = False
+
 
 # test_application/my_task/completed
 #
@@ -40,7 +35,8 @@ async def create_new_application(create_application: CreateApplication):
             "Application with given name already exists",
         )
     app = Application(
-        display_name=create_application.display_name or create_application.name,
+        display_name=create_application.display_name
+        or create_application.name,
         name=create_application.name,
         description=create_application.description or "",
         disabled=create_application.disabled,
@@ -112,28 +108,6 @@ class DefineTask(AppBaseModel):
 class InvalidTask(HTTPException):
     def __init__(self, message: str):
         super(InvalidTask, self).__init__(422, message)
-
-
-def parse_task_type_or_raise(
-    body_type: Optional[TaskTypesRegistry.KeyType], body: Optional[Any]
-):
-    body_type = body_type or TaskTypesRegistry.ARBITRARY
-    type_ = ApplicationTask.get_body_type(body_type)
-    if type_ is None:
-        if body is not None:
-            raise InvalidTask(
-                "invalid task body, body must be empty (null), since"
-                f' task_type "{body_type}" doesn\'t allow a body',
-            )
-        return body_type, None
-    else:
-        try:
-            return body_type, parse_obj_as(type_, body)
-        except ValidationError:
-            raise InvalidTask(
-                "invalid task body, body must be assignable to task_type"
-                f" {type_}"
-            )
 
 
 async def raise_if_application_task_name_taken(
@@ -232,11 +206,15 @@ class SyncResult(AppBaseModel):
 
 
 async def notify_task_changed(task: ApplicationTask):
-    await get_channel_layer().group_send(
-        f"m/app/{task.app_id}", "task", task
-    )
+    await get_channel_layer().group_send(f"m/app/{task.app_id}", "task", task)
     await get_channel_layer().group_send(
         f"a/{task.app_id}", "task_updated", DefinedTask.from_db(task)
+    )
+
+
+async def notify_sequence_changed(sequence: EventSequence):
+    await get_channel_layer().group_send(
+        f"m/seq/{sequence.id}", "sequence", sequence
     )
 
 

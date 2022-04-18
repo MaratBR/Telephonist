@@ -64,7 +64,7 @@ class User(BaseDocument):
         password: str,
         email: Optional[EmailStr] = None,
         password_reset_required: bool = False,
-        is_superuser: bool = True
+        is_superuser: bool = True,
     ):
         user = cls(
             username=username,
@@ -73,7 +73,7 @@ class User(BaseDocument):
             password_hash=hash_password(password),
             email=email,
             password_reset_required=password_reset_required,
-            is_superuser=is_superuser
+            is_superuser=is_superuser,
         )
         await user.save()
         return user
@@ -101,7 +101,11 @@ class User(BaseDocument):
 
     class Collection:
         name = "users"
-        indexes = ["email", "disabled", pymongo.IndexModel("normalized_username", unique=True)]
+        indexes = [
+            "email",
+            "disabled",
+            pymongo.IndexModel("normalized_username", unique=True),
+        ]
 
 
 class UserView(AppBaseModel):
@@ -136,7 +140,7 @@ class AuthLog(Document):
         user_id: PydanticObjectId,
         user_agent: str,
         ip_address_or_request: Union[str, Address, Request],
-        extra: Optional[dict[str, Any]] = None
+        extra: Optional[dict[str, Any]] = None,
     ):
         if isinstance(ip_address_or_request, Request):
             address = ip_address_or_request.client.host
@@ -149,7 +153,7 @@ class AuthLog(Document):
             event=event,
             user_id=user_id,
             ip_address=address,
-            extra=extra or {}
+            extra=extra or {},
         ).insert()
 
 
@@ -161,4 +165,3 @@ class PersistentUserSession(BaseDocument):
 
     class Collection:
         name = "persistent_sessions"
-

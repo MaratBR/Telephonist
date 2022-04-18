@@ -30,16 +30,6 @@ class Prefix(str):
         return str(prefix).startswith(str(self) + "/")
 
 
-class ChannelGroups:
-    MONITORING = Prefix("monitoring")
-    AUTH = Prefix("auth")
-    APPLICATION = Prefix("application")
-    EVENTS = Prefix("events")
-
-
-CG = ChannelGroups()
-
-
 async def require_model_with_id(
     model: Type[Document], document_id, *, message: str = "Not found"
 ):

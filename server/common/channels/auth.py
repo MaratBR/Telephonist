@@ -1,9 +1,7 @@
-import abc
 from typing import TYPE_CHECKING, Optional, Type, TypeVar
 
 from beanie import Document, PydanticObjectId
 from fastapi import Depends, HTTPException, Query
-from pydantic import validator
 from starlette.websockets import WebSocket
 
 from server.auth.internal.exceptions import InvalidToken

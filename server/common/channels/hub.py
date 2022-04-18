@@ -18,7 +18,11 @@ from pydantic import Field, ValidationError, parse_obj_as
 from pydantic.typing import is_classvar
 from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 
-from server.common.channels.layer import ChannelLayer, Connection, get_channel_layer
+from server.common.channels.layer import (
+    ChannelLayer,
+    Connection,
+    get_channel_layer,
+)
 from server.common.models import AppBaseModel
 from server.utils.annotations import AnnotatedMember, create_annotation
 

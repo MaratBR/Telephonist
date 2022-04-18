@@ -1,37 +1,41 @@
 import asyncio
 
 import motor.motor_asyncio
-import nanoid
+import pytest
+from beanie import Document, init_beanie
 
-from server.database import (
-    Application,
-    ApplicationTask,
-    Event,
-    EventSequence,
-    init_database,
-)
-from server.settings import DebugSettings, use_settings
+
+async def do():
+    try:
+        await asyncio.sleep(1000)
+    except asyncio.CancelledError:
+        await asyncio.sleep(0.5)
+
+
+class DocumentWithRevisionTurnedOn(Document):
+    num_1: int
+    num_2: int
+
+    class Settings:
+        use_revision = True
+        use_state_management = True
+
+
+async def test_empty_update():
+    doc = DocumentWithRevisionTurnedOn(num_1=1, num_2=2)
+    await doc.insert()
+
+    # This fails with RevisionIdWasChanged
+    await doc.update({"$set": {"num_1": 1}})
 
 
 async def main():
-    use_settings(DebugSettings)
-    client = motor.motor_asyncio.AsyncIOMotorClient()
-    await init_database(client)
-    # await create_applications(1)
-    n = 5
-    await EventSequence.delete_all()
-    await Application.delete_all()
-    await ApplicationTask.delete_all()
-    await Event.delete_all()
-
-    for i in range(n):
-        app = Application(
-            name=f"application_{i}", display_name=f"Application {i}"
-        )
-        await app.insert()
-        await ApplicationTask(
-            app_id=app.id,
-        )
+    client = motor.motor_asyncio.AsyncIOMotorClient(
+        "mongodb://localhost:27017"
+    )
+    db = client.test_database
+    await init_beanie(db, document_models=[DocumentWithRevisionTurnedOn])
+    await test_empty_update()
 
 
 if __name__ == "__main__":

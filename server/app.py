@@ -20,7 +20,11 @@ from server.auth.sessions import (
     RedisSessionBackend,
     init_sessions_backend,
 )
-from server.common.channels import get_channel_layer, start_backplane, stop_backplane
+from server.common.channels import (
+    get_channel_layer,
+    start_backplane,
+    stop_backplane,
+)
 from server.common.channels.backplane import (
     BackplaneBase,
     InMemoryBackplane,
@@ -47,9 +51,10 @@ class TelephonistApp(FastAPI):
         self._motor_client = motor_client
         self.logger = logging.getLogger("telephonist.application")
         self.settings = get_settings()
+        print(self.settings.cors_origins)
         self.add_middleware(
             CORSMiddleware,
-            allow_origins=self.settings.cors_origin,
+            allow_origins=self.settings.cors_origins,
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=[
@@ -68,12 +73,12 @@ class TelephonistApp(FastAPI):
 
     @staticmethod
     async def __debug_route__(request: Request):
-        return ORJSONResponse({
-            "headers": dict(request.headers),
-            "client": [
-                request.client.host, request.client.port
-            ]
-        })
+        return ORJSONResponse(
+            {
+                "headers": dict(request.headers),
+                "client": [request.client.host, request.client.port],
+            }
+        )
 
     async def _index(self):
         return ORJSONResponse({"detail": "OK"})
@@ -82,7 +87,7 @@ class TelephonistApp(FastAPI):
     async def _backplane_hc():
         now = time.time_ns()
         try:
-            async with async_timeout.timeout(.5):
+            async with async_timeout.timeout(0.5):
                 await get_backplane().ping()
             latency = (time.time_ns() - now) / 1000000
             d = {
@@ -90,26 +95,16 @@ class TelephonistApp(FastAPI):
                 "latency_ms": latency,
             }
         except Exception as exc:
-            d = {
-                "healthy": False,
-                "exception": {
-                    "type": type(exc).__name__
-                }
-            }
+            d = {"healthy": False, "exception": {"type": type(exc).__name__}}
 
-        d = {
-            "type": type(get_backplane()).__name__,
-            "status": d
-        }
+        d = {"type": type(get_backplane()).__name__, "status": d}
         return d
 
     async def _hc(self):
 
-        return ORJSONResponse({
-            "modules": {
-                "backplane": await self._backplane_hc()
-            }
-        })
+        return ORJSONResponse(
+            {"modules": {"backplane": await self._backplane_hc()}}
+        )
 
     async def _on_startup(self):
         try:

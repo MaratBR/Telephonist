@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from server.app import create_debug_app, TelephonistApp
+from server.app import TelephonistApp, create_debug_app
 from server.common.channels.backplane import InMemoryBackplane
 from server.settings import TestingSettings, get_settings, use_settings
 from tests.utils import do_auth_client

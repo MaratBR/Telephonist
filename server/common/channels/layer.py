@@ -238,7 +238,7 @@ class ChannelLayer:
 
     async def groups_send(self, groups: list[str], msg_type: str, data: Any):
         if isinstance(data, BaseModel):
-            data = data.dict()
+            data = data.dict(by_alias=True)
         await self._backplane.publish_many(
             [_PREFIX_MESSAGE + g for g in groups],
             {"type": "message", "message": {"type": msg_type, "data": data}},

@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     secret: SecretStr
     jwt_issuer: Optional[str] = "https://telephonist.io"
     session_lifetime: timedelta = timedelta(days=30)
-    cors_origin: List[str] = []
+    cors_origins: List[str] = []
 
     class SessionBackend(str, enum.Enum):
         MEMORY = "memory"
@@ -53,7 +53,7 @@ class Settings(BaseSettings):
 
 
 class DebugSettings(Settings):
-    cors_origin: List[str] = [
+    cors_origins: List[str] = [
         "http://localhost:8080",
         "http://localhost:5500",
         "http://telephonist.lc:8080",

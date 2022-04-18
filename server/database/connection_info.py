@@ -7,10 +7,10 @@ from uuid import UUID, uuid4
 
 import pymongo
 from beanie import PydanticObjectId
-from pydantic import Field
+from pydantic import Field, validator
 from pymongo.client_session import ClientSession
 
-from server.common.models import AppBaseModel, BaseDocument
+from server.common.models import AppBaseModel, BaseDocument, convert_to_utc
 from server.database.registry import register_model
 from server.settings import get_settings
 
@@ -51,6 +51,10 @@ class ConnectionInfo(BaseDocument):
     is_connected: bool = False
     event_subscriptions: List[str] = Field(default_factory=list)
 
+    _at_validator = validator(
+        "connected_at", "disconnected_at", allow_reuse=True
+    )(convert_to_utc)
+
     @classmethod
     def get(
         cls,
@@ -67,33 +71,42 @@ class ConnectionInfo(BaseDocument):
         )
 
     @classmethod
-    def remove_subscription(
+    async def remove_subscription(
         cls,
         connection_id: UUID,
         events: Union[str, list[str], tuple[str], set[str]],
     ):
-        cls.find({"_id": connection_id}).update(
+        if isinstance(events, str):
+            events = [events]
+        else:
+            events = list(events)
+
+        await cls.find({"_id": connection_id}).update(
             {
                 "$pull": {
                     "event_subscriptions": events[0]
                     if len(events) == 1
-                    else {"$each": len(events)}
+                    else {"$each": events}
                 }
             }
         )
 
     @classmethod
-    def add_subscription(
+    async def add_subscription(
         cls,
         connection_id: UUID,
         events: Union[str, list[str], tuple[str], set[str]],
     ):
-        cls.find({"_id": connection_id}).update(
+        if isinstance(events, str):
+            events = [events]
+        else:
+            events = list(events)
+        await cls.find({"_id": connection_id}).update(
             {
                 "$addToSet": {
                     "event_subscriptions": events[0]
                     if len(events) == 1
-                    else {"$each": len(events)}
+                    else {"$each": events}
                 }
             }
         )
@@ -124,6 +137,7 @@ class ConnectionInfo(BaseDocument):
             )
             await connection.insert()
         else:
+            connection.connected_at = datetime.utcnow()
             connection.is_connected = True
             connection.machine_id = info.machine_id
             connection.instance_id = info.instance_id

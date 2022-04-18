@@ -1,5 +1,5 @@
 import abc
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import (
     TYPE_CHECKING,
     ClassVar,
@@ -26,7 +26,11 @@ class TokenModel(AppBaseModel):
     __token_type__: ClassVar[str]
     registry: ClassVar[dict[str, Type["TokenModel"]]] = {}
     exp: datetime
-    iat: datetime = Field(default_factory=datetime.utcnow)
+    iat: datetime = Field(
+        default_factory=lambda: datetime.utcnow().replace(
+            microsecond=0, tzinfo=timezone.utc
+        )
+    )
     jti: str = Field(default_factory=nanoid.generate)
 
     def __init_subclass__(cls, **kwargs):

@@ -15,6 +15,7 @@ class Server(BaseDocument):
     ip: Indexed(str, unique=True) = None
     last_seen: datetime = Field(default_factory=datetime.utcnow)
     os: Optional[str] = None
+    description: Optional[str] = None
 
     class ServerView(AppBaseModel):
         id: PydanticObjectId = Field(alias="_id")

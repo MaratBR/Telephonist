@@ -3,7 +3,10 @@ import datetime
 from beanie.odm.enums import SortDirection
 from fastapi import APIRouter, Depends, FastAPI
 
-from server.auth.internal.dependencies import require_session, validate_csrf_token
+from server.auth.internal.dependencies import (
+    require_session,
+    validate_csrf_token,
+)
 from server.database import (
     Application,
     AppLog,
@@ -26,21 +29,11 @@ authentication_deps = [Depends(require_session), Depends(validate_csrf_token)]
 user_api = APIRouter()
 
 
-user_api.include_router(
-    applications_router, dependencies=authentication_deps
-)
-user_api.include_router(
-    events_router, dependencies=authentication_deps
-)
-user_api.include_router(
-    tasks_router, dependencies=authentication_deps
-)
-user_api.include_router(
-    logs_router, dependencies=authentication_deps
-)
-user_api.include_router(
-    users_router, dependencies=authentication_deps
-)
+user_api.include_router(applications_router, dependencies=authentication_deps)
+user_api.include_router(events_router, dependencies=authentication_deps)
+user_api.include_router(tasks_router, dependencies=authentication_deps)
+user_api.include_router(logs_router, dependencies=authentication_deps)
+user_api.include_router(users_router, dependencies=authentication_deps)
 user_api.include_router(
     ws_router, prefix="/ws", dependencies=authentication_deps
 )
@@ -61,12 +54,12 @@ async def get_stats():
     counters = await Counter.get_counters(
         {"finished_sequences", "sequences", "failed_sequences", "events"}
     )
-    sequences = (
+    failed_sequences = (
         await EventSequence.find(
             EventSequence.state == EventSequenceState.FAILED
         )
         .sort(("_id", SortDirection.DESCENDING))
-        .limit(20)
+        .limit(7)
         .to_list()
     )
     return {
@@ -74,14 +67,28 @@ async def get_stats():
         "in_progress_sequences": {
             "count": await EventSequence.find(
                 EventSequence.state == EventSequenceState.IN_PROGRESS,
-                EventSequence.created_at >= datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+                EventSequence.created_at
+                >= datetime.datetime.utcnow().replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                ),
             ).count(),
             "list": await EventSequence.find(
                 EventSequence.state == EventSequenceState.IN_PROGRESS,
-                EventSequence.created_at >= datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-            ).sort(("_id", SortDirection.DESCENDING)).limit(20).to_list()
+                EventSequence.created_at
+                >= datetime.datetime.utcnow().replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                ),
+            )
+            .sort(("_id", SortDirection.DESCENDING))
+            .limit(20)
+            .to_list(),
         },
-        "failed_sequences": sequences,
+        "failed_sequences": {
+            "count": await EventSequence.find(
+                EventSequence.state == EventSequenceState.FAILED
+            ).count(),
+            "list": failed_sequences,
+        },
         "db": {
             "stats": {
                 "allocated": db_stats["storageSize"],

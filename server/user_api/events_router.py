@@ -9,7 +9,7 @@ from fastapi_cache.decorator import cache
 from starlette.responses import Response
 
 from server.common.internal.utils import Errors
-from server.common.models import AppBaseModel, Pagination
+from server.common.models import AppBaseModel, Pagination, convert_to_utc
 from server.database import (
     Application,
     AppLog,
@@ -19,6 +19,7 @@ from server.database import (
     EventSequence,
     EventSequenceState,
 )
+from server.database.server import Server
 from server.utils.common import Querydict
 
 events_router = APIRouter(prefix="/events")
@@ -128,8 +129,10 @@ async def get_sequence(sequence_id: PydanticObjectId):
     if sequence.connection_id:
         connection = await ConnectionInfo.get(sequence.connection_id)
         assert connection, "Connection must exist"
+        server_obj = await Server.find_one({"ip": connection.ip})
         connection_obj = connection.dict(by_alias=True)
     else:
+        server_obj = None
         connection_obj = None
     logs = (
         await AppLog.find(AppLog.sequence_id == sequence.id)
@@ -143,10 +146,11 @@ async def get_sequence(sequence_id: PydanticObjectId):
             by_alias=True, include={"id", "deleted_at", "name", "display_name"}
         ),
         "connection": connection_obj,
+        "host": server_obj,
         "logs": [
             {
                 "_id": l.id,
-                "t": l.created_at,
+                "t": convert_to_utc(l.created_at),
                 "body": l.body,
                 "severity": l.severity,
             }

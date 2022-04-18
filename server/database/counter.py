@@ -2,6 +2,7 @@ from datetime import date, datetime
 from typing import Optional
 
 import pymongo
+from pymongo.errors import DuplicateKeyError
 
 from server.common.models import AppBaseModel, BaseDocument
 from server.database.registry import register_model
@@ -96,22 +97,18 @@ class Counter(BaseDocument):
         existing_periods = set()
         for c in counters:
             existing_periods.add(c.period)
-        new_periods = periods.difference(existing_periods)
-        if len(new_periods) > 0:
-            await Counter.insert_many(
-                [
-                    Counter(
-                        id=f"{subject}/{period}",
-                        subject=subject,
-                        period=period,
-                        value=value,
-                    )
-                    for period in new_periods
-                ]
-            )
-        await cls.find(
-            {"period": {"$in": list(existing_periods)}, "subject": subject}
-        ).inc({"value": value})
+
+        for period in periods:
+            id_ = f"{subject}/{period}"
+            try:
+                await Counter(
+                    id=id_,
+                    subject=subject,
+                    period=period,
+                    value=value,
+                ).insert()
+            except DuplicateKeyError:
+                await Counter.find({"_id": id_}).inc({"value": value})
 
     @staticmethod
     def get_current_periods():

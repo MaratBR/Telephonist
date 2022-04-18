@@ -86,12 +86,12 @@ def validate_csrf_token(
 def client_fingerprint(
     request: Request,
     session_id: Optional[str] = Depends(get_session),
-    token: Optional[str] = Depends(bearer)
+    token: Optional[str] = Depends(bearer),
 ) -> str:
     return get_client_fingerprint(
         request.client.host,
-        request.headers.get('user-agent'),
-        [session_id, token]
+        request.headers.get("user-agent"),
+        [session_id, token],
     )
 
 

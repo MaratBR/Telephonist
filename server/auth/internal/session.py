@@ -20,19 +20,25 @@ async def _generate_session_id():
 async def create_user_session(request: Request, user: User):
     session = UserSession(
         user_id=user.id,
-        user_agent=request.headers.get('user-agent'),
+        user_agent=request.headers.get("user-agent"),
         ip_address=request.client.host,
-        is_superuser=user.is_superuser
+        is_superuser=user.is_superuser,
     )
     session_id = await _generate_session_id()
-    await get_session_backend().set(session_id, session, ttl=get_settings().session_lifetime.total_seconds())
+    await get_session_backend().set(
+        session_id,
+        session,
+        ttl=get_settings().session_lifetime.total_seconds(),
+    )
     session_obj = PersistentUserSession(_id=session_id, data=session)
     await session_obj.insert()
     return session_obj
 
 
 def get_sessions(user_id: PydanticObjectId):
-    return PersistentUserSession.find(PersistentUserSession.data.user_id == user_id).to_list()
+    return PersistentUserSession.find(
+        PersistentUserSession.data.user_id == user_id
+    ).to_list()
 
 
 async def close_session(session: Union[PersistentUserSession, str]):
@@ -48,9 +54,7 @@ async def close_session(session: Union[PersistentUserSession, str]):
         await get_channel_layer().group_send(
             f"session/{session_id}",
             "force_refresh",
-            {
-                "reason": "session_closed"
-            }
+            {"reason": "session_closed"},
         )
 
     if session_obj:

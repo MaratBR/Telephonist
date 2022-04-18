@@ -1,7 +1,6 @@
 from starlette.testclient import TestClient
 
 
-
 def test_create_application(auth_client: TestClient):
     resp = auth_client.post(
         "/api/user-v1/applications",
@@ -44,12 +43,10 @@ def test_update_application(auth_client: TestClient):
     app_id = resp.json()["_id"]
     resp = auth_client.patch(
         "/api/user-v1/applications/" + app_id,
-        json={
-            "display_name": "New name"
-        }
+        json={"display_name": "New name"},
     )
     assert resp.status_code == 200, resp.text
     resp = auth_client.get(f"/api/user-v1/applications/{app_id}")
     data = resp.json()
-    assert 'app' in data and 'display_name' in data['app'], resp.text
-    assert data['app']['display_name'] == 'New name'
+    assert "app" in data and "display_name" in data["app"], resp.text
+    assert data["app"]["display_name"] == "New name"

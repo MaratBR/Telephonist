@@ -58,13 +58,11 @@ class OneTimeSecurityCode(BaseDocument):
     @classmethod
     def exists(cls, code: str, type_: Optional[str] = None):
         find = {
-                "_id": code,
-            }
+            "_id": code,
+        }
         if type_:
             find["code_type"] = type_
-        return cls.find(
-            find
-        ).exists()
+        return cls.find(find).exists()
 
     @classmethod
     async def get_valid_code(

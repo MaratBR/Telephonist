@@ -36,13 +36,11 @@ async def send_logs(
         for log in logs
     ]
     result = await AppLog.insert_many(models)
+    print(f"inserted {len(result.inserted_ids)} logs out of {len(models)}")
     for i in range(len(models)):
         models[i].id = PydanticObjectId(result.inserted_ids[i])
     groups = (
-        [
-            f"m/sequenceLogs/{sequence_id}",
-            f"m/appLogs/{app_id}"
-        ]
+        [f"m/sequenceLogs/{sequence_id}", f"m/appLogs/{app_id}"]
         if sequence_id
         else [f"m/appLogs/{app_id}"]
     )

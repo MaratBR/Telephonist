@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import List, Optional, Union
+from typing import List, Optional
 
 import fastapi
 from beanie import PydanticObjectId
@@ -11,10 +11,10 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 import server.common.internal.application as _internal
+from server.common.channels import get_channel_layer
 from server.common.internal.utils import Errors, require_model_with_id
 from server.common.models import (
     AppBaseModel,
-    Identifier,
     IdProjection,
     Pagination,
     PaginationResult,
@@ -33,9 +33,11 @@ from server.database import (
 _APPLICATION_NOT_FOUND = "Application not found"
 
 
-async def _get_application(
-    app_id_or_name: Union[PydanticObjectId, Identifier]
-):
+async def _get_application(app_id_or_name: str):
+    try:
+        app_id_or_name = PydanticObjectId(app_id_or_name)
+    except InvalidId:
+        pass
     return Errors.raise404_if_none(
         await Application.find_one(
             Application.NOT_DELETED_COND,
@@ -86,10 +88,6 @@ class SequenceLogs(AppBaseModel):
 
 @applications_router.get("/{app_id_or_name}")
 async def get_application(app_id_or_name: str):
-    try:
-        app_id_or_name = PydanticObjectId(app_id_or_name)
-    except InvalidId:
-        pass
     app = await _get_application(app_id_or_name)
     connections = (
         await ConnectionInfo.find(ConnectionInfo.app_id == app.id)
@@ -155,6 +153,16 @@ async def update_application(
     return ApplicationView(**app.dict(by_alias=True))
 
 
+@applications_router.delete("/{app_id}")
+async def deactivate_application(app_id: str):
+    app = await _get_application(app_id)
+    await app.soft_delete()
+    await get_channel_layer().group_send(
+        f"a/{app.id}", "force_reconnect", {"reason": "app_deleted"}
+    )
+    return {"detail": "App deleted"}
+
+
 @applications_router.get("/{app_id}/logs")
 async def get_app_logs(
     app_id: PydanticObjectId,
@@ -172,7 +180,9 @@ async def get_app_logs(
 
 
 @applications_router.post("/cr")
-async def request_code_registration(request: Request, del_code: Optional[str] = Query(None)):
+async def request_code_registration(
+    request: Request, del_code: Optional[str] = Query(None)
+):
     code = await OneTimeSecurityCode.new(
         "new_app", ip_address=request.client.host
     )
@@ -203,9 +213,7 @@ class CRFinishResponse(AppBaseModel):
     id: PydanticObjectId
 
 
-@applications_router.post(
-    "/cr/finish/{code}", response_model=CRFinishResponse
-)
+@applications_router.post("/cr/finish/{code}", response_model=CRFinishResponse)
 async def finish_code_registration(code: str, body: CRFinishRequest):
     code_inst = await OneTimeSecurityCode.get_valid_code("new_app_code", code)
     if code_inst is None:
@@ -250,6 +258,7 @@ async def define_application_task(
 ):
     app = await _get_application(app_ident)
     task = await _internal.define_task(app, body)
+    await _internal.notify_task_changed(task)
     return _detailed_application_task_view(task, app)
 
 

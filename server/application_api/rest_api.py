@@ -1,3 +1,4 @@
+import logging
 from typing import Any, List, Optional
 from uuid import UUID
 
@@ -15,6 +16,8 @@ from server.common.transit import dispatch
 from server.database import ApplicationTask, EventSequence, OneTimeSecurityCode
 
 rest_router = APIRouter()
+logger = logging.getLogger("telephonist.application_api.rest")
+
 
 async def _get_sequence_or_404(
     sequence_id: PydanticObjectId, app_id: Optional[PydanticObjectId] = None
@@ -44,7 +47,10 @@ async def get_self(app=APPLICATION):
 
 
 @rest_router.post("/cr")
-async def code_registration(code: str = Query(...), body: application_internal.CreateApplication = Body(...)):
+async def code_registration(
+    code: str = Query(...),
+    body: application_internal.CreateApplication = Body(...),
+):
     body.disabled = False
     code = await OneTimeSecurityCode.get_valid_code("new_app", code)
     if code is None:
@@ -53,12 +59,12 @@ async def code_registration(code: str = Query(...), body: application_internal.C
     await get_channel_layer().group_send(
         f"m/cr/{code}",
         "cr_complete",
-        {"cr": code, "app_id": application.id, "app_name": application.name}
+        {"cr": code, "app_id": application.id, "app_name": application.name},
     )
     return {
         "detail": "Application registered successfully!",
         "key": application.access_key,
-        "_id": application.id
+        "_id": application.id,
     }
 
 
@@ -88,7 +94,6 @@ async def define_task_route(
 
 class DefinedTaskConfig(AppBaseModel):
     tasks: List[application_internal.DefinedTask]
-
 
 
 @rest_router.post("/defined-tasks/check", dependencies=[APPLICATION])
@@ -184,10 +189,16 @@ async def create_sequence_route(
         )
     )
     await event_internal.notify_events(start_event)
+    logger.debug(
+        f"created sequence {sequence.id} for task"
+        f" {sequence.task_name} (connection_id={sequence.connection_id})"
+    )
     return sequence
 
 
-@rest_router.post("/sequences/{sequence_id}/finish", dependencies=[APPLICATION])
+@rest_router.post(
+    "/sequences/{sequence_id}/finish", dependencies=[APPLICATION]
+)
 async def finish_sequence(
     request: Request,
     sequence_id: PydanticObjectId,
@@ -206,6 +217,10 @@ async def finish_sequence(
             task_id=sequence.task_id,
             is_skipped=False,
         )
+    )
+    logger.debug(
+        f"finished sequence {sequence.id} for task"
+        f" {sequence.task_name} (connection_id={sequence.connection_id})"
     )
     return {"detail": "Sequence finished"}
 

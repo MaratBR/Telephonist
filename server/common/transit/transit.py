@@ -12,6 +12,12 @@ class Handler:
     async def handle_message(self, message):
         ...
 
+    async def enable(self):
+        ...
+
+    async def disable(self):
+        ...
+
 
 class BatchHandler(Handler):
     def __init__(self, original_handler: Handler, delay: float, max_size: int):
@@ -23,15 +29,16 @@ class BatchHandler(Handler):
         self.original_handler = original_handler
         self._wake_up = asyncio.Event()
         self._loop_task = None
-        self._delay_loop_task = None
+        self._delay_loop_task: Optional[asyncio.Task] = None
         self._ready = False
+        self._enabled = True
 
     async def handle_message(self, message):
         self._ensure_tasks()
         self._pile.append(message)
         if len(self._pile) == 1:
             self._wake_up.set()
-        if len(self._pile) > self.max_size:
+        if len(self._pile) >= self.max_size:
             pile = self._pile
             self._pile = []
             await self._staged_piles.put(pile)
@@ -41,24 +48,44 @@ class BatchHandler(Handler):
             f"{type(self).__name__} failed to process messages batch: {exc}"
         )
 
+    async def disable(self):
+        if self._delay_loop_task and not self._delay_loop_task.done():
+            self._delay_loop_task.cancel()
+            await self._delay_loop_task
+        self._enabled = False
+        if self._loop_task and not self._loop_task.done():
+            self._loop_task.cancel()
+            await self._loop_task
+
     async def _delay_loop(self):
-        while True:
-            await self._wake_up.wait()
-            self._wake_up.clear()
-            await asyncio.sleep(self.delay)
-            if len(self._pile) == 0:
-                continue
-            pile = self._pile
-            self._pile = []
-            await self._staged_piles.put(pile)
+        try:
+            while True:
+                await self._wake_up.wait()
+                self._wake_up.clear()
+                await asyncio.sleep(self.delay)
+                if len(self._pile) == 0:
+                    continue
+                pile = self._pile
+                self._pile = []
+                await self._staged_piles.put(pile)
+        except asyncio.CancelledError:
+            if len(self._pile) > 0:
+                await self._staged_piles.put(self._pile)
 
     async def _loop(self):
-        while True:
+        async def handle_pile():
             pile = await self._staged_piles.get()
             try:
                 await self.original_handler.handle_message(pile)
             except Exception as exc:
                 asyncio.create_task(self.on_failure(exc))
+
+        try:
+            while True:
+                await handle_pile()
+        except asyncio.CancelledError:
+            while not self._staged_piles.empty():
+                await handle_pile()
 
     def _ensure_tasks(self):
         if self._delay_loop_task is None:
@@ -78,6 +105,7 @@ class FunctionHandler(Handler):
 class TransitEndpointBase:
     def __init__(self):
         self._handlers = {}
+        self._enabled_handlers = set()
         self._logger = logging.getLogger("telephonist.transit")
         self._error_logger = self._logger.getChild("error")
 
@@ -99,10 +127,18 @@ class TransitEndpointBase:
         if handlers is None:
             return
         for handler in handlers:
+            if handler not in self._enabled_handlers:
+                self._enabled_handlers.add(handler)
+                await handler.enable()
             try:
                 await handler.handle_message(message)
             except Exception as exc:
                 self._error_logger.error(str(exc))
+
+    async def shutdown(self):
+        self._handlers = {}
+        for h in self._enabled_handlers:
+            await h.disable()
 
     async def dispatch(self, message):
         type_ = type(message)

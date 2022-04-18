@@ -19,7 +19,9 @@ class RedisSessionBackend(SessionsBackend):
         )
 
     async def delete(self, session_id: str, session_class: Type[TSessionData]):
-        await self._redis.delete(self._prefix + session_class.__name__ + ":" + session_id)
+        await self._redis.delete(
+            self._prefix + session_class.__name__ + ":" + session_id
+        )
 
     async def exists(
         self, session_id: str, session_class: Type[TSessionData]

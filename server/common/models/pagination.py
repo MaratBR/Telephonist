@@ -8,11 +8,12 @@ from typing import (
     Any,
     Generic,
     List,
+    Mapping,
     Optional,
     Set,
     Type,
     TypeVar,
-    Union, Mapping,
+    Union,
 )
 
 from beanie import Document
@@ -172,7 +173,9 @@ class Pagination:
         if self.use_order_by:
             q = q.sort(
                 (
-                    self.fields_mapping.get(self.params.order_by.value, self.params.order_by.value),
+                    self.fields_mapping.get(
+                        self.params.order_by.value, self.params.order_by.value
+                    ),
                     SortDirection.DESCENDING
                     if self.params.order == OrderingDirection.DESC
                     else SortDirection.ASCENDING,

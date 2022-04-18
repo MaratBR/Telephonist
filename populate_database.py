@@ -5,6 +5,8 @@ from functools import wraps
 
 from pymongo.errors import DuplicateKeyError
 
+from server.common.channels import start_backplane
+from server.common.channels.backplane import InMemoryBackplane
 from server.common.internal import create_sequence_and_start_event
 from server.common.internal.application import (
     CreateApplication,
@@ -14,10 +16,19 @@ from server.common.internal.application import (
 )
 from server.common.internal.events import (
     FinishSequence,
+    SequenceCreated,
     SequenceDescriptor,
+    SequenceFinished,
     finish_sequence,
 )
-from server.database import Application, Event, EventSequence, init_database
+from server.common.transit import dispatch, transit_instance
+from server.database import (
+    Application,
+    Counter,
+    Event,
+    EventSequence,
+    init_database,
+)
 from server.database.task import ApplicationTask, TaskBody, TaskTypesRegistry
 from server.settings import DebugSettings, use_settings
 
@@ -53,7 +64,11 @@ async def populate_application(name: str):
                 name=f"script_task_sleep_{i}",
                 description=f"Script tasks that sleeps for {i} seconds",
                 body=TaskBody(
-                    type=TaskTypesRegistry.SCRIPT, value=f"echo Sleeping for {i} seconds\nsleep {i}\necho Done sleeping for {i} seconds"
+                    type=TaskTypesRegistry.SCRIPT,
+                    value=(
+                        f"echo Sleeping for {i} seconds\nsleep {i}\necho Done"
+                        f" sleeping for {i} seconds"
+                    ),
                 ),
             ),
         )
@@ -63,9 +78,7 @@ async def populate_application(name: str):
         DefineTask(
             name="exec_task",
             description="Some exec task",
-            body=TaskBody(
-                type=TaskTypesRegistry.EXEC, value="/usr/bin/env"
-            ),
+            body=TaskBody(type=TaskTypesRegistry.EXEC, value="/usr/bin/env"),
         ),
     )
     await define_task(
@@ -74,7 +87,8 @@ async def populate_application(name: str):
             name="script_task",
             description="Some script task",
             body=TaskBody(
-                type=TaskTypesRegistry.SCRIPT, value="echo 123\necho 2\nrm /tmp/testfolder"
+                type=TaskTypesRegistry.SCRIPT,
+                value="echo 123\necho 2\nrm /tmp/testfolder",
             ),
         ),
     )
@@ -84,36 +98,84 @@ async def populate_application(name: str):
             name="arbitrary_task",
             description="Some script task",
             body=TaskBody(
-                type=TaskTypesRegistry.ARBITRARY, value="echo 123\necho 2\nrm /tmp/testfolder"
+                type=TaskTypesRegistry.ARBITRARY,
+                value="echo 123\necho 2\nrm /tmp/testfolder",
             ),
         ),
     )
-    seq, _ = await create_sequence_and_start_event(app.id, SequenceDescriptor(task_id=arbitrary_task.id), '127.0.0.1')
-    await finish_sequence(seq, FinishSequence(), '127.0.0.1')
+    seq, _ = await create_sequence_and_start_event(
+        app.id, SequenceDescriptor(task_id=arbitrary_task.id), "127.0.0.1"
+    )
+    await dispatch(
+        SequenceCreated(
+            sequence_id=seq.id, app_id=seq.app_id, task_id=seq.task_id
+        )
+    )
+    await finish_sequence(seq, FinishSequence(), "127.0.0.1")
+    await dispatch(
+        SequenceFinished(
+            sequence_id=seq.id,
+            app_id=seq.app_id,
+            task_id=seq.task_id,
+            is_skipped=False,
+        )
+    )
 
-    seq, _ = await create_sequence_and_start_event(app.id, SequenceDescriptor(task_id=arbitrary_task.id), '127.0.0.1')
-    await finish_sequence(seq, FinishSequence(error_message='Something went very wrong!'), '127.0.0.1')
+    for i in range(10):
+        seq, _ = await create_sequence_and_start_event(
+            app.id, SequenceDescriptor(task_id=arbitrary_task.id), "127.0.0.1"
+        )
+        await dispatch(
+            SequenceCreated(
+                sequence_id=seq.id, app_id=seq.app_id, task_id=seq.task_id
+            )
+        )
+        await finish_sequence(
+            seq,
+            FinishSequence(error_message="Something went very wrong!"),
+            "127.0.0.1",
+        )
+        await dispatch(
+            SequenceFinished(
+                sequence_id=seq.id,
+                app_id=seq.app_id,
+                task_id=seq.task_id,
+                error="Something went very wrong!",
+                is_skipped=False,
+            )
+        )
 
-    seq, _ = await create_sequence_and_start_event(app.id, SequenceDescriptor(task_id=arbitrary_task.id), '127.0.0.1')
-    await seq.update_meta({
-        'steps_total': 400,
-        'steps_done': 32,
-        'description': 'Doing very important things here!'
-    })
+    seq, _ = await create_sequence_and_start_event(
+        app.id, SequenceDescriptor(task_id=arbitrary_task.id), "127.0.0.1"
+    )
+    await dispatch(
+        SequenceCreated(
+            sequence_id=seq.id, app_id=seq.app_id, task_id=seq.task_id
+        )
+    )
+    await seq.update_meta(
+        {
+            "steps_total": 400,
+            "steps_done": 32,
+            "description": "Doing very important things here!",
+        }
+    )
 
 
 async def clean_database():
-    for m in [ApplicationTask, Application, EventSequence, Event]:
+    for m in [ApplicationTask, Application, EventSequence, Event, Counter]:
         await m.delete_all()
 
 
 async def populate():
+    await start_backplane(InMemoryBackplane())
     use_settings(DebugSettings)
     await init_database()
     await clean_database()
     await populate_application("test_application_1")
     await populate_application("test_application_2")
     await populate_application("test_application_3")
+    await asyncio.sleep(6)
 
 
 if __name__ == "__main__":

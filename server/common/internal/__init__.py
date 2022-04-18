@@ -8,6 +8,7 @@ from .application import (
     get_application_tasks,
     get_task_or_404,
     notify_connection_changed,
+    notify_sequence_changed,
     notify_task_changed,
 )
 from .events import (

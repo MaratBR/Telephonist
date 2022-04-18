@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import TypeVar, Union
+from typing import Optional, TypeVar, Union
 from uuid import UUID
 
 from beanie import PydanticObjectId
@@ -18,10 +18,12 @@ Identifier = constr(regex=r"^[\d\w%^$#&\-]+\Z")
 _DT = TypeVar("_DT", bound=datetime)
 
 
-def convert_to_utc(dt: datetime):
+def convert_to_utc(dt: Optional[datetime]):
+    if dt is None:
+        return None
     if dt.tzinfo is not None:
         if dt.utcoffset().total_seconds() != 0:
             dt = dt.astimezone(timezone.utc)
     else:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt
+    return dt.replace(microsecond=0)

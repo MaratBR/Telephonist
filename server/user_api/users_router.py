@@ -12,8 +12,17 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from server.auth.internal.dependencies import superuser
-from server.auth.internal.session import close_all_sessions, close_session, get_sessions
-from server.auth.models.auth import AuthLog, PersistentUserSession, User, UserView
+from server.auth.internal.session import (
+    close_all_sessions,
+    close_session,
+    get_sessions,
+)
+from server.auth.models.auth import (
+    AuthLog,
+    PersistentUserSession,
+    User,
+    UserView,
+)
 from server.auth.sessions import UserSession, session_cookie
 from server.common.channels import get_channel_layer
 from server.common.models import AppBaseModel, Pagination
@@ -25,9 +34,7 @@ class UsersPagination(Pagination):
     descending_by_default = True
     default_order_by = "username"
     ordered_by_options = {"_id", "username"}
-    fields_mapping = {
-        "username": "normalized_username"
-    }
+    fields_mapping = {"username": "normalized_username"}
 
 
 @users_router.get("")
@@ -51,7 +58,7 @@ async def create_user(data: CreateUser = Body(...)):
         password=data.password.get_secret_value(),
         email=data.email,
         password_reset_required=True,
-        is_superuser=data.is_superuser
+        is_superuser=data.is_superuser,
     )
     return UserView(**user.dict(by_alias=True))
 
@@ -71,7 +78,9 @@ async def get_user(user_id: Union[PydanticObjectId, str]):
 
 
 @users_router.get("/{user_id}")
-async def get_user_detailed(user_id: str, session_id: str = Depends(session_cookie)):
+async def get_user_detailed(
+    user_id: str, session_id: str = Depends(session_cookie)
+):
     user = await get_user(user_id)
     return {
         "user": UserView(**user.dict(by_alias=True)),
@@ -80,13 +89,17 @@ async def get_user_detailed(user_id: str, session_id: str = Depends(session_cook
                 "id": s.ref_id,
                 "user_agent": {
                     "raw": s.data.user_agent,
-                    "detected": httpagentparser.detect(s.data.user_agent)
+                    "detected": httpagentparser.detect(s.data.user_agent),
                 },
                 "ip": s.data.ip_address,
-                "created_at": s.data.logged_in_at
-            } for s in await get_sessions(user.id)
+                "created_at": s.data.logged_in_at,
+            }
+            for s in await get_sessions(user.id)
         ],
-        "last_events": await AuthLog.find(AuthLog.user_id == user.id).sort(("_id", SortDirection.DESCENDING)).limit(20).to_list()
+        "last_events": await AuthLog.find(AuthLog.user_id == user.id)
+        .sort(("_id", SortDirection.DESCENDING))
+        .limit(20)
+        .to_list(),
     }
 
 
@@ -96,8 +109,10 @@ class BlockRequest(AppBaseModel):
 
 @users_router.post("/{user_id}/block")
 async def block_user(
-    request: Request, user_id: PydanticObjectId, data: BlockRequest = Body(BlockRequest()),
-    session: UserSession = Depends(superuser)
+    request: Request,
+    user_id: PydanticObjectId,
+    data: BlockRequest = Body(BlockRequest()),
+    session: UserSession = Depends(superuser),
 ):
     user = await get_user(user_id)
     if not user.is_blocked:
@@ -106,18 +121,12 @@ async def block_user(
         await AuthLog.log(
             "blocked",
             user.id,
-            request.headers.get('user-agent'),
+            request.headers.get("user-agent"),
             request.client.host,
-            {
-                "blocked_by": session.user_id
-            }
+            {"blocked_by": session.user_id},
         )
         await get_channel_layer().group_send(
-            f"u/{user_id}",
-            "banned",
-            {
-                "reason": data.reason
-            }
+            f"u/{user_id}", "banned", {"reason": data.reason}
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -128,8 +137,4 @@ async def close_user_session(user_id: str, session_ref_id: UUID):
     session = await PersistentUserSession.find_one({"ref_id": session_ref_id})
     if session:
         await close_session(session)
-        return {
-            "detail": "Session closed"
-        }
-
-
+        return {"detail": "Session closed"}

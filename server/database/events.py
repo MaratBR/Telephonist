@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import UUID
 
@@ -17,13 +17,24 @@ class Event(BaseDocument):
     sequence_id: Optional[PydanticObjectId]
     event_key: str
     event_type: str
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.utcnow().replace(
+            tzinfo=timezone.utc, microsecond=0
+        )
+    )
     data: Optional[Any] = None
     publisher_ip: Optional[str]
 
     _created_at_validator = validator("created_at", allow_reuse=True)(
         convert_to_utc
     )
+
+    class Config:
+        json_encoders = {
+            datetime: lambda dt: None
+            if dt is None
+            else convert_to_utc(dt).isoformat()
+        }
 
     class Collection:
         name = "events"
