@@ -1,4 +1,6 @@
 FROM python:3.9.10-alpine
+
+# install rust and cargo, they're required for cryptography
 RUN apk add \
     gcc \
     libc-dev \

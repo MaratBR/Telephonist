@@ -45,29 +45,20 @@ docker run \
   --net=host \
   maratbr/telephonist:latest
   
-  
-  
-  
+docker run \
+  -e TELEPHONIST_CORS_ORIGINS=[\"http://admin.telephonist.lc:8000\"] \
+  -e TELEPHONIST_SECRET=secret \
+  -e TELEPHONIST_DISABLE_SSL=True \
+  -e TELEPHONIST_SSL_KEY=/certs/key.pem \
+  -e TELEPHONIST_DB_URL=mongodb://127.0.0.1:27017 \
+  -e TELEPHONIST_REDIS_URL=redis://127.0.0.1:6379 \
+  --mount type=bind,source=$(pwd)/certs,target=/certs \
+  --net=host \
+  maratbr/telephonist:latest
   
 docker run \
   -e API_URL=https://api.telephonist.lc:5789 \
   -e NGINX_SERVER_NAME=admin.telephonist.lc \
   -p 8000:80 \
   maratbr/telephonist-admin:latest 
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
 ```

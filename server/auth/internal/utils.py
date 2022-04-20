@@ -71,7 +71,7 @@ def static_key_factory(length: int = 42):
     return partial(create_static_key, length)
 
 
-def parse_resource_key(key: str) -> Tuple[str, str]:
+def parse_resource_key(key: str) -> tuple[str, str]:
     try:
         type_, id_ = key.split(".")
         return type_, id_
