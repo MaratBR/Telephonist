@@ -34,7 +34,6 @@ from server.common.channels.backplane import (
 from server.database import init_database, shutdown_database
 from server.settings import DebugSettings, Settings, get_settings, use_settings
 from server.user_api import user_api
-from server.ws_root_router import ws_root_router
 
 
 class TelephonistApp(FastAPI):
@@ -158,7 +157,6 @@ class TelephonistApp(FastAPI):
             raise
 
     def _init_routers(self):
-        self.include_router(ws_root_router)
         self.include_router(user_api, prefix="/api/user-v1")
         self.include_router(application_api, prefix="/api/application-v1")
 

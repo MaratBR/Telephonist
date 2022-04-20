@@ -30,7 +30,6 @@ from server.database.connection_info import (
     ConnectionInfo,
 )
 from server.database.server import Server
-from server.ws_root_router import ws_root_router
 
 ws_router = APIRouter(prefix="/ws", tags=["ws"])
 logger = logging.getLogger("telephonist.application_api.ws")
@@ -68,8 +67,7 @@ class LogMessage(AppBaseModel):
     logs: List[_internal.LogRecord]
 
 
-# unless https://github.com/tiangolo/fastapi/pull/2640 gets merged, we're stuck with this workaround
-@ws_controller(ws_root_router, "/_ws/application/report")
+@ws_controller(ws_router, "/report")
 class AppReportHub(Hub):
     ticket: WSTicketModel[Application] = WSTicket(Application)
     same_ip: Optional[str] = Query(None)

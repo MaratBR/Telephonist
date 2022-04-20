@@ -10,7 +10,6 @@ from server.auth.models.auth import User
 from server.auth.sessions import UserSession
 from server.common.channels import WSTicket, WSTicketModel
 from server.common.channels.hub import Hub, bind_message, ws_controller
-from server.ws_root_router import ws_root_router
 
 ws_router = APIRouter()
 
@@ -24,7 +23,7 @@ async def issue_user_ws_ticket(token: UserSession = Depends(get_session)):
     }
 
 
-@ws_controller(ws_root_router, "/_ws/user/main")
+@ws_controller(ws_router, "/main")
 class UserHub(Hub):
     ticket: WSTicketModel[User] = WSTicket(User)
 
