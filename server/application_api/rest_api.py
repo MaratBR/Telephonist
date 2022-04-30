@@ -7,8 +7,8 @@ from beanie.operators import In
 from fastapi import APIRouter, Body, HTTPException, Query
 from starlette.requests import Request
 
-import server.common.internal.application as application_internal
-import server.common.internal.events as event_internal
+import server.common.actions.application as application_internal
+import server.common.actions.events as event_internal
 from server.application_api._utils import APPLICATION
 from server.common.channels import get_channel_layer
 from server.common.models import AppBaseModel

@@ -7,23 +7,19 @@ from starlette import status
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from server.auth.internal.dependencies import get_session, require_session
-from server.auth.internal.session import close_session, create_user_session
-from server.auth.internal.token import JWT, PasswordResetToken
-from server.auth.models.auth import (
-    AuthLog,
-    PersistentUserSession,
-    User,
-    UserView,
-)
-from server.auth.sessions import (
-    UserSession,
-    get_session_backend,
-    mask_csrf_token,
+from server.auth.actions import close_session, create_user_session
+from server.auth.dependencies import (
+    CurrentUser,
+    get_session,
+    require_session,
     session_cookie,
 )
+from server.auth.models import AuthLog, User, UserSession, UserView
+from server.auth.token import JWT, PasswordResetToken
+from server.auth.utils import hash_password, mask_hex_token, verify_password
 from server.common.models import AppBaseModel
-from server.settings import get_settings
+from server.exceptions import ApiException
+from server.settings import settings
 
 auth_router = fastapi.routing.APIRouter(tags=["auth"], prefix="/auth")
 
@@ -53,11 +49,13 @@ class LoginRequest(AppBaseModel):
 
 @auth_router.post("/logout")
 async def logout(
+    response: Response,
     session: Optional[UserSession] = Depends(get_session),
     session_id: Optional[str] = Depends(session_cookie),
 ):
     if session and session_id:
         await close_session(session_id)
+        response.delete_cookie(session_cookie.cookie)
     return {"detail": "Bye, bye!"}
 
 
@@ -93,15 +91,15 @@ async def login_user(
         session_cookie.cookie,
         session_id,
         httponly=True,
-        max_age=int(get_settings().session_lifetime.total_seconds()),
-        secure=get_settings().cookies_policy.lower() == "none"
-        or not get_settings().use_non_secure_cookies,
-        samesite=get_settings().cookies_policy,
+        max_age=int(settings.get().session_lifetime.total_seconds()),
+        secure=settings.get().cookies_policy.lower() == "none"
+        or not settings.get().use_non_secure_cookies,
+        samesite=settings.get().cookies_policy,
     )
 
     return {
         "user": UserView(**user.dict(by_alias=True)),
-        "csrf": mask_csrf_token(session_obj.data.csrf_token),
+        "csrf": mask_hex_token(session_obj.csrf_token),
         "detail": "Logged in successfully",
         "session_ref_id": session_obj.ref_id,
     }
@@ -121,7 +119,7 @@ async def whoami(
             "ip": [request.client.host, request.client.port],
         }
     user = await User.get(session_data.user_id)
-    session_obj = await PersistentUserSession.find_one({"_id": session_id})
+    session_obj = await UserSession.find_one({"_id": session_id})
     return {
         "user": UserView(**user.dict(by_alias=True)),
         "session_ref_id": None if session_obj is None else session_obj.ref_id,
@@ -132,10 +130,13 @@ async def whoami(
 
 @auth_router.get("/csrf")
 async def get_csrf_token(
+    response: Response,
     session_data: UserSession = Depends(require_session),
 ):
-    masked = mask_csrf_token(session_data.csrf_token)
-    return Response(masked, headers={"X-CSRF-Token": masked})
+    masked = mask_hex_token(session_data.csrf_token)
+    response.headers["X-CSRF-Token"] = masked
+    response.media_type = "text/plain"
+    return masked
 
 
 @auth_router.post("/logout")
@@ -145,8 +146,9 @@ async def logout(
     session: UserSession = Depends(get_session),
 ):
     if session_id:
-        if await get_session_backend().exists(session_id, UserSession):
-            await get_session_backend().delete(session_id, UserSession)
+        session = await UserSession.find_one({"_id": session_id})
+        if session:
+            await session.delete()
             if session:
                 await AuthLog.log(
                     "sessionLogout",
@@ -175,3 +177,28 @@ async def reset_password(body: ResetPassword, request: Request):
         "password-reset", user.id, request.headers.get("user-agent"), request
     )
     return {"detail": "Password reset"}
+
+
+class ResetPasswordCurrentUser(AppBaseModel):
+    new_password: str
+    password: Optional[str]
+
+
+@auth_router.post("/reset-password-current")
+async def reset_password_for_current_user(
+    body: ResetPasswordCurrentUser = Body(...),
+    user: User = CurrentUser(),
+    session_id: str = Depends(session_cookie),
+):
+    if not verify_password(body.password, user.password_hash):
+        raise ApiException(
+            401, "password_reset.password_invalid", "Password is invalid!"
+        )
+    user.password_hash = hash_password(body.new_password)
+    await user.save()
+    sessions = await UserSession.find(UserSession.user_id == user.id).to_list()
+    for session in sessions:
+        if session.id == session_id:
+            continue
+        await close_session(session)
+    return {"details": "Password changed successfully"}

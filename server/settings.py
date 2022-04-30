@@ -1,9 +1,11 @@
+import contextvars
 import enum
-import inspect
 from datetime import timedelta
-from typing import List, Optional, Type, Union
+from typing import List, Optional
 
 from pydantic import BaseSettings, SecretStr
+
+__all__ = ("Settings", "DebugSettings", "TestingSettings", "settings")
 
 
 class Settings(BaseSettings):
@@ -20,12 +22,6 @@ class Settings(BaseSettings):
     session_lifetime: timedelta = timedelta(days=30)
     cors_origins: List[str] = []
 
-    class SessionBackend(str, enum.Enum):
-        MEMORY = "memory"
-        REDIS = "redis"
-
-    session_backend: SessionBackend = SessionBackend.REDIS
-
     class BackplaneBackend(str, enum.Enum):
         REDIS = "redis"
         MEMORY = "memory"
@@ -40,7 +36,7 @@ class Settings(BaseSettings):
     user_registration_unix_socket_only: bool = True
     unix_socket_name: str = "unix"
     hanging_connections_policy: str = "remove"
-    cookies_policy: str = "None"
+    cookies_policy: str = "Lax"
     use_non_secure_cookies: bool = False
     use_capped_collection_for_logs: bool = True
     logs_capped_collection_max_size_mb: int = 2**16  # 2**16 mb == 64 GiB
@@ -69,22 +65,9 @@ class DebugSettings(Settings):
 class TestingSettings(Settings):
     secret: SecretStr = "secret" * 5
     backplane_backend = Settings.BackplaneBackend.MEMORY
-    session_backend = Settings.SessionBackend.MEMORY
     is_testing = True
 
 
-_settings: Optional[Settings] = None
-
-
-def get_settings():
-    assert _settings is not None, "settings has not been initialized yet"
-    return _settings
-
-
-def use_settings(new_settings: Union[Settings, Type[Settings]]):
-    global _settings
-    assert _settings is None, "settings has already been initialized"
-    if inspect.isclass(new_settings):
-        _settings = new_settings()
-    else:
-        _settings = new_settings
+settings: contextvars.ContextVar[Settings] = contextvars.ContextVar(
+    "Application settings"
+)

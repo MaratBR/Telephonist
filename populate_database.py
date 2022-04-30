@@ -5,22 +5,22 @@ from functools import wraps
 
 from pymongo.errors import DuplicateKeyError
 
-from server.common.channels import start_backplane
-from server.common.channels.backplane import InMemoryBackplane
-from server.common.internal import create_sequence_and_start_event
-from server.common.internal.application import (
+from server.common.actions import create_sequence_and_start_event
+from server.common.actions.application import (
     CreateApplication,
     DefineTask,
     create_new_application,
     define_task,
 )
-from server.common.internal.events import (
+from server.common.actions.events import (
     FinishSequence,
     SequenceCreated,
     SequenceDescriptor,
     SequenceFinished,
     finish_sequence,
 )
+from server.common.channels import start_backplane
+from server.common.channels.backplane import InMemoryBackplane
 from server.common.transit import dispatch, transit_instance
 from server.database import (
     Application,

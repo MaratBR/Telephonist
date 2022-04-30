@@ -1,15 +1,12 @@
-import base64
-import hashlib
-import json
+import binascii
 import secrets
 import string
 from functools import partial
-from typing import *
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
-from server.auth.internal.exceptions import InvalidToken
+from server.auth.exceptions import InvalidToken
 
 __all__ = (
     "hash_password",
@@ -19,9 +16,12 @@ __all__ = (
     "create_static_key",
     "static_key_factory",
     "parse_resource_key",
+    "unmask_hex_token",
+    "mask_hex_token",
+    "generate_csrf_token",
 )
 
-from server.settings import get_settings
+from server.settings import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -42,8 +42,8 @@ def decode_token_raw(token: str) -> dict:
     try:
         return jwt.decode(
             token,
-            get_settings().secret.get_secret_value(),
-            issuer=get_settings().jwt_issuer,
+            settings.get().secret.get_secret_value(),
+            issuer=settings.get().jwt_issuer,
             algorithms=[jwt.ALGORITHMS.HS256],
             options={"require_sub": True},
         )
@@ -53,8 +53,8 @@ def decode_token_raw(token: str) -> dict:
 
 def encode_token_raw(data: dict):
     return jwt.encode(
-        {**data, "iss": get_settings().jwt_issuer},
-        get_settings().secret.get_secret_value(),
+        {**data, "iss": settings.get().jwt_issuer},
+        settings.get().secret.get_secret_value(),
     )
 
 
@@ -79,11 +79,27 @@ def parse_resource_key(key: str) -> tuple[str, str]:
         raise ValueError("invalid resource key")
 
 
-def get_client_fingerprint(
-    ip_address: str, user_agent: Optional[str], extra: Optional[Any]
-) -> str:
-    return base64.urlsafe_b64encode(
-        hashlib.sha256(
-            json.dumps([ip_address, user_agent, extra]).encode("utf-8")
-        ).digest()
+_CSRF_BYTES = 16
+
+
+def generate_csrf_token():
+    return secrets.token_hex(_CSRF_BYTES)
+
+
+def mask_hex_token(token: str):
+    salt = secrets.token_hex(_CSRF_BYTES)
+    xored = int(token, 16) ^ int(salt, 16)
+    return salt + binascii.hexlify(
+        xored.to_bytes(_CSRF_BYTES, byteorder="big")
+    ).decode("ascii")
+
+
+def unmask_hex_token(masked_token: str):
+    if len(masked_token) != _CSRF_BYTES * 4:
+        raise ValueError("invalid length of the masked token")
+    salt = masked_token[: _CSRF_BYTES * 2]
+    xored = masked_token[_CSRF_BYTES * 2 :]
+    token = int(xored, 16) ^ int(salt, 16)
+    return binascii.hexlify(
+        token.to_bytes(_CSRF_BYTES, byteorder="big")
     ).decode("ascii")

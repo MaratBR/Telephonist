@@ -15,8 +15,8 @@ import nanoid
 from beanie import PydanticObjectId
 from pydantic import Field, ValidationError, validator
 
-from server.auth.internal.exceptions import InvalidToken
-from server.auth.internal.utils import decode_token_raw, encode_token_raw
+from server.auth.exceptions import InvalidToken
+from server.auth.utils import decode_token_raw, encode_token_raw
 from server.common.models import AppBaseModel
 
 T = TypeVar("T", bound="TokenModel")

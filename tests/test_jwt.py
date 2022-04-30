@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from beanie import Document, PydanticObjectId
 
-from server.auth.internal.token import TokenModel
+from server.auth.token import TokenModel
 from server.common.channels import WSTicketModel
 
 

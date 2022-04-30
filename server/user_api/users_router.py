@@ -11,19 +11,9 @@ from starlette import status
 from starlette.requests import Request
 from starlette.responses import Response
 
-from server.auth.internal.dependencies import superuser
-from server.auth.internal.session import (
-    close_all_sessions,
-    close_session,
-    get_sessions,
-)
-from server.auth.models.auth import (
-    AuthLog,
-    PersistentUserSession,
-    User,
-    UserView,
-)
-from server.auth.sessions import UserSession, session_cookie
+from server.auth.actions import close_all_sessions, close_session, get_sessions
+from server.auth.dependencies import superuser
+from server.auth.models import AuthLog, User, UserSession, UserView
 from server.common.channels import get_channel_layer
 from server.common.models import AppBaseModel, Pagination
 
@@ -79,7 +69,7 @@ async def get_user(user_id: Union[PydanticObjectId, str]):
 
 @users_router.get("/{user_id}")
 async def get_user_detailed(
-    user_id: str, session_id: str = Depends(session_cookie)
+    user_id: str,
 ):
     user = await get_user(user_id)
     return {
@@ -88,11 +78,11 @@ async def get_user_detailed(
             {
                 "id": s.ref_id,
                 "user_agent": {
-                    "raw": s.data.user_agent,
-                    "detected": httpagentparser.detect(s.data.user_agent),
+                    "raw": s.user_agent,
+                    "detected": httpagentparser.detect(s.user_agent),
                 },
-                "ip": s.data.ip_address,
-                "created_at": s.data.logged_in_at,
+                "ip": s.ip_address,
+                "created_at": s.logged_in_at,
             }
             for s in await get_sessions(user.id)
         ],
@@ -134,7 +124,7 @@ async def block_user(
 @users_router.delete("/{user_id}/sessions/{session_ref_id}")
 async def close_user_session(user_id: str, session_ref_id: UUID):
     await get_user(user_id)
-    session = await PersistentUserSession.find_one({"ref_id": session_ref_id})
+    session = await UserSession.find_one({"ref_id": session_ref_id})
     if session:
         await close_session(session)
         return {"detail": "Session closed"}

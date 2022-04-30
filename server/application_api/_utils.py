@@ -2,7 +2,7 @@ from typing import Union
 
 from fastapi import Depends, HTTPException, params
 
-from server.auth.internal.schema import require_bearer
+from server.auth.dependencies import require_bearer
 from server.database import Application
 
 

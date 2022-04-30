@@ -5,14 +5,13 @@ from datetime import datetime
 from typing import Awaitable, List, Optional, Union, cast
 from uuid import UUID, uuid4
 
-import pymongo
 from beanie import PydanticObjectId
 from pydantic import Field, validator
 from pymongo.client_session import ClientSession
 
 from server.common.models import AppBaseModel, BaseDocument, convert_to_utc
 from server.database.registry import register_model
-from server.settings import get_settings
+from server.settings import settings
 
 _logger = logging.getLogger("telephonist.database")
 
@@ -162,7 +161,7 @@ class ConnectionInfo(BaseDocument):
                 " unexpectedly",
                 hanging_connections,
             )
-            if get_settings().hanging_connections_policy == "remove":
+            if settings.get().hanging_connections_policy == "remove":
                 _logger.warning(
                     'settings.hanging_connections_policy is set to "remove",'
                     " all hanging connections will be removed"
@@ -174,8 +173,4 @@ class ConnectionInfo(BaseDocument):
         use_revision = True
 
     class Collection:
-        indexes = [
-            pymongo.IndexModel(
-                "expires_at", name="expires_at_ttl", expireAfterSeconds=1
-            )
-        ]
+        indexes = []

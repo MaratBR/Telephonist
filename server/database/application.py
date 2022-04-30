@@ -8,7 +8,7 @@ from beanie.operators import Inc
 from beanie.operators import Set as SetOp
 from pydantic import Field
 
-from server.auth.internal.utils import static_key_factory
+from server.auth.utils import static_key_factory
 from server.common.models import (
     AppBaseModel,
     BaseDocument,

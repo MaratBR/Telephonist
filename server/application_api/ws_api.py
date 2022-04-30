@@ -8,7 +8,7 @@ from beanie import PydanticObjectId
 from beanie.odm.operators.find.comparison import In
 from fastapi import APIRouter, Query
 
-import server.common.internal as _internal
+import server.common.actions as _internal
 from server import VERSION
 from server.application_api._utils import APPLICATION
 from server.common.channels import WSTicket, WSTicketModel
@@ -135,11 +135,15 @@ class AppReportHub(Hub):
             for seq in sequences:
                 await _internal.notify_sequence_changed(seq)
 
+            await self.channel_layer.group_send(
+                f"m/connections/{self._connection_info.id}", "updated"
+            )
+
     @bind_message("hello")
     async def on_hello(self, message: HelloMessage):
         if self._ready:
             await self.send_error(
-                "you cannot introduce yourself twice, dummy!"
+                "You cannot introduce yourself twice, dummy!"
             )
             return
         self._ready = True
@@ -163,6 +167,9 @@ class AppReportHub(Hub):
                     ConnectionInfo.app_id == self._app_id,
                 ).count(),
             },
+        )
+        await self.channel_layer.group_send(
+            f"m/connections/{self._connection_info.id}", "updated"
         )
         await self.synchronize_tasks()
 

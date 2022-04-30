@@ -11,6 +11,15 @@ from aioredis import Redis
 from bson import ObjectId
 from pydantic import BaseModel
 
+__all__ = (
+    "BackplaneBase",
+    "InMemoryBackplane",
+    "RedisBackplane",
+    "get_backplane",
+    "start_backplane",
+    "stop_backplane",
+)
+
 _logger = logging.getLogger("telephonist.channels")
 
 
@@ -247,20 +256,3 @@ async def stop_backplane():
 def get_backplane() -> BackplaneBase:
     assert _backplane is not None, "backplane is not yet initialized"
     return _backplane
-
-
-T = TypeVar("T")
-
-
-@asynccontextmanager
-async def mapped_subscription(
-    manager: AsyncContextManager[AsyncIterable[T]],
-    map_function: Callable[[T], T],
-) -> AsyncContextManager[AsyncIterable[Tuple[str, Any]]]:
-    async with manager as iterable:
-
-        async def mapper():
-            async for item in iterable:
-                yield map_function(item)
-
-        yield mapper()

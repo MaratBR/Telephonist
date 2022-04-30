@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import timezone
 from typing import List, Optional
 
 import fastapi
@@ -10,9 +10,9 @@ from starlette import status
 from starlette.requests import Request
 from starlette.responses import Response
 
-import server.common.internal.application as _internal
+import server.common.actions.application as _internal
+from server.common.actions.utils import Errors
 from server.common.channels import get_channel_layer
-from server.common.internal.utils import Errors, require_model_with_id
 from server.common.models import (
     AppBaseModel,
     IdProjection,
@@ -163,22 +163,6 @@ async def deactivate_application(app_id: str):
     return {"detail": "App deleted"}
 
 
-@applications_router.get("/{app_id}/logs")
-async def get_app_logs(
-    app_id: PydanticObjectId,
-    before: Optional[datetime] = None,
-):
-    await require_model_with_id(
-        Application, app_id, message=f"Application with id={app_id} not found"
-    )
-    if before is None:
-        logs = AppLog.find()
-    else:
-        logs = AppLog.find_before(before)
-    logs = await logs.limit(100).to_list()
-    return {"before": before, "logs": logs}
-
-
 @applications_router.post("/cr")
 async def request_code_registration(
     request: Request, del_code: Optional[str] = Query(None)
@@ -260,35 +244,3 @@ async def define_application_task(
     task = await _internal.define_task(app, body)
     await _internal.notify_task_changed(task)
     return _detailed_application_task_view(task, app)
-
-
-@applications_router.get("/{app_id_or_name}/sequences/{sequence_id}")
-async def get_sequence(app_id_or_name: str, sequence_id: PydanticObjectId):
-    try:
-        app_id_or_name = PydanticObjectId(app_id_or_name)
-    except InvalidId:
-        pass
-    app = await _get_application(app_id_or_name)
-    sequence = await EventSequence.find_one(
-        EventSequence.id == sequence_id, EventSequence.app_id == app.id
-    )
-    Errors.raise404_if_none(sequence)
-    logs = (
-        await AppLog.find(AppLog.sequence_id == sequence.id)
-        .sort(("created_at", SortDirection.DESCENDING))
-        .limit(3000)
-        .to_list()
-    )
-    return {
-        **sequence.dict(by_alias=True, exclude={"app_id"}),
-        "app": app.dict(by_alias=True, include={"id", "name", "display_name"}),
-        "logs": [
-            {
-                "t": log.created_at,
-                "severity": log.severity,
-                "body": log.body,
-                "_id": log.id,
-            }
-            for log in logs
-        ],
-    }

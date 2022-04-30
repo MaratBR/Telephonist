@@ -185,8 +185,8 @@ class ChannelLayer:
     async def _internal_messages(self):
         try:
             async with self._backplane.subscribe(
-                _PREFIX + "internal",
-                _PREFIX + "internal/" + self._id,
+                _PREFIX + "actions",
+                _PREFIX + "actions/" + self._id,
             ) as sub:
                 async for _, message in sub:
                     await self._handle_internal_message(message)
@@ -233,10 +233,12 @@ class ChannelLayer:
                 },
             )
 
-    def group_send(self, group: str, msg_type: str, data: Any):
+    def group_send(self, group: str, msg_type: str, data: Any = None):
         return self.groups_send([group], msg_type, data)
 
-    async def groups_send(self, groups: list[str], msg_type: str, data: Any):
+    async def groups_send(
+        self, groups: list[str], msg_type: str, data: Any = None
+    ):
         if isinstance(data, BaseModel):
             data = data.dict(by_alias=True)
         await self._backplane.publish_many(

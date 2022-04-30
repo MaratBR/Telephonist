@@ -1,42 +1,40 @@
-import asyncio
-
-import motor.motor_asyncio
-import pytest
-from beanie import Document, init_beanie
+import binascii
+import secrets
 
 
-async def do():
-    try:
-        await asyncio.sleep(1000)
-    except asyncio.CancelledError:
-        await asyncio.sleep(0.5)
-
-
-class DocumentWithRevisionTurnedOn(Document):
-    num_1: int
-    num_2: int
-
-    class Settings:
-        use_revision = True
-        use_state_management = True
-
-
-async def test_empty_update():
-    doc = DocumentWithRevisionTurnedOn(num_1=1, num_2=2)
-    await doc.insert()
-
-    # This fails with RevisionIdWasChanged
-    await doc.update({"$set": {"num_1": 1}})
-
-
-async def main():
-    client = motor.motor_asyncio.AsyncIOMotorClient(
-        "mongodb://localhost:27017"
+def mask(token: bytes):
+    salt = secrets.token_bytes(1)
+    xored = int.from_bytes(token, byteorder="big") ^ int.from_bytes(
+        salt * len(token), byteorder="big"
     )
-    db = client.test_database
-    await init_beanie(db, document_models=[DocumentWithRevisionTurnedOn])
-    await test_empty_update()
+    masked = binascii.b2a_hex(
+        salt + xored.to_bytes(len(token), byteorder="big")
+    ).decode("ascii")
+    return masked
+
+
+def unmask(token: str):
+    b = binascii.a2b_hex(token)
+    salt = b[:1] * (len(b) - 1)
+    unmasked = binascii.b2a_hex(
+        (
+            int.from_bytes(salt, byteorder="big")
+            ^ int.from_bytes(b[1:], byteorder="big")
+        ).to_bytes(len(b) - 1, byteorder="big")
+    ).decode("ascii")
+    return unmasked
+
+
+def main():
+    token = secrets.token_bytes(48)
+    token_str = binascii.b2a_hex(token).decode("ascii")
+    print(f"token_str = {token_str}")
+    for i in range(100):
+        masked = mask(token)
+        print(f"masked = {masked}")
+        unmasked = unmask(masked)
+        assert unmasked == token_str
 
 
 if __name__ == "__main__":
-    asyncio.get_event_loop().run_until_complete(main())
+    main()

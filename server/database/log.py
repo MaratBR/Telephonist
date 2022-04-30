@@ -1,4 +1,5 @@
 import enum
+import time
 from datetime import datetime
 from typing import Any, Optional
 
@@ -8,7 +9,7 @@ from pydantic import Field
 
 from server.common.models import BaseDocument
 from server.database.registry import register_model
-from server.settings import get_settings
+from server.settings import settings
 
 
 class Severity(enum.IntEnum):
@@ -27,14 +28,14 @@ class AppLog(BaseDocument):
     body: str
     extra: Optional[dict[str, Any]]
     sequence_id: Optional[PydanticObjectId]
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    t: int = Field(default_factory=lambda: time.time_ns() // 1000)
 
     @staticmethod
     def __motor_create_collection_params__():
-        if get_settings().use_capped_collection_for_logs:
+        if settings.get().use_capped_collection_for_logs:
             return {
                 "capped": True,
-                "size": get_settings().logs_capped_collection_max_size_mb
+                "size": settings.get().logs_capped_collection_max_size_mb
                 * 2**20,
             }
 

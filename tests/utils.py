@@ -1,7 +1,5 @@
 from starlette.testclient import TestClient
 
-from server.auth.sessions import session_cookie
-
 
 def do_auth_client(client: TestClient):
     resp = client.post(

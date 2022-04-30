@@ -8,11 +8,18 @@ from pydantic import EmailStr, Field, root_validator
 from starlette.datastructures import Address
 from starlette.requests import Request
 
-from server.auth.internal.utils import hash_password, verify_password
-from server.auth.sessions import UserSession
 from server.common.models import AppBaseModel, BaseDocument
 from server.database.registry import register_model
-from server.settings import get_settings
+from server.settings import settings
+
+from .utils import generate_csrf_token, hash_password, verify_password
+
+__all__ = (
+    "User",
+    "UserSession",
+    "AuthLog",
+    "UserView",
+)
 
 
 @register_model
@@ -81,11 +88,11 @@ class User(BaseDocument):
     @classmethod
     async def on_database_ready(cls):
         if not await cls.find(
-            cls.normalized_username == get_settings().default_username.upper()
+            cls.normalized_username == settings.get().default_username.upper()
         ).exists():
             await cls.create_user(
-                get_settings().default_username,
-                get_settings().default_password,
+                settings.get().default_username,
+                settings.get().default_password,
                 password_reset_required=True,
             )
 
@@ -158,10 +165,22 @@ class AuthLog(Document):
 
 
 @register_model
-class PersistentUserSession(BaseDocument):
+class UserSession(BaseDocument):
     id: str
     ref_id: Indexed(UUID, unique=True) = Field(default_factory=uuid4)
-    data: UserSession
+    user_id: PydanticObjectId
+    user_agent: Optional[str] = None
+    logged_in_at: datetime = Field(default_factory=datetime.now)
+    ip_address: str
+    csrf_token: str = Field(default_factory=generate_csrf_token)
+    is_superuser: bool = False
+    expires_at: datetime
+    renew_at: Optional[datetime]
 
     class Collection:
-        name = "persistent_sessions"
+        name = "sessions"
+        indexes = [
+            pymongo.IndexModel(
+                "expires_at", name="expires_at_ttl", expireAfterSeconds=0
+            )
+        ]

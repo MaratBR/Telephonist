@@ -1,9 +1,10 @@
-from datetime import datetime, timezone
+import time
+from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
 
 from beanie import PydanticObjectId
-from pydantic import Field, validator
+from pydantic import Field
 
 from server.common.models import BaseDocument, convert_to_utc
 from server.database.registry import register_model
@@ -17,17 +18,9 @@ class Event(BaseDocument):
     sequence_id: Optional[PydanticObjectId]
     event_key: str
     event_type: str
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.utcnow().replace(
-            tzinfo=timezone.utc, microsecond=0
-        )
-    )
+    t: int = Field(default_factory=lambda: time.time_ns() // 1000)
     data: Optional[Any] = None
     publisher_ip: Optional[str]
-
-    _created_at_validator = validator("created_at", allow_reuse=True)(
-        convert_to_utc
-    )
 
     class Config:
         json_encoders = {

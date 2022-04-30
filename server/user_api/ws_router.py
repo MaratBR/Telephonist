@@ -5,9 +5,8 @@ from typing import List, Set, Union
 from fastapi import APIRouter, Depends
 
 from server import VERSION
-from server.auth.internal.dependencies import get_session
-from server.auth.models.auth import User
-from server.auth.sessions import UserSession
+from server.auth.dependencies import get_session
+from server.auth.models import User, UserSession
 from server.common.channels import WSTicket, WSTicketModel
 from server.common.channels.hub import Hub, bind_message, ws_controller
 

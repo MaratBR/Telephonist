@@ -232,7 +232,7 @@ async def create_sequence_and_start_event(
         )
     task_name = task.qualified_name
     name = descriptor.custom_name or (
-        task_name + datetime.now().strftime(" (%Y.%m.%d %H:%M:%S)")
+        task_name + " [" + str(int(datetime.utcnow().timestamp())) + "]"
     )
 
     sequence = EventSequence(
@@ -264,6 +264,7 @@ async def create_sequence_and_start_event(
 class FinishSequence(AppBaseModel):
     error_message: Optional[str]
     is_skipped: bool = False
+    metadata: Optional[dict[str, Any]]
 
 
 async def finish_sequence(
@@ -299,10 +300,11 @@ async def finish_sequence(
             else event_type,
             publisher_ip=ip_address,
             app_id=sequence.app_id,
+            data=finish_request.metadata,
         )
         for event_type in (
             stop_event,
-            STOP_EVENT,  # generic stop event
+            "stop",  # generic stop event
         )
     ]
     for e in events:

@@ -4,8 +4,8 @@ from beanie import Document, PydanticObjectId
 from fastapi import Depends, HTTPException, Query
 from starlette.websockets import WebSocket
 
-from server.auth.internal.exceptions import InvalidToken
-from server.auth.internal.token import JWT, TokenModel
+from server.auth.exceptions import InvalidToken
+from server.auth.token import JWT, TokenModel
 from server.common.channels.wscode import WSC_UNAUTHORIZED
 
 

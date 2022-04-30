@@ -7,8 +7,8 @@ from fastapi import HTTPException
 from pydantic import Field, validator
 from starlette import status
 
+from server.common.actions.utils import Errors
 from server.common.channels import get_channel_layer
-from server.common.internal.utils import Errors
 from server.common.models import AppBaseModel, Identifier, convert_to_utc
 from server.database import Application, ConnectionInfo, EventSequence
 from server.database.task import ApplicationTask, TaskBody, TaskTrigger
@@ -103,6 +103,7 @@ class DefineTask(AppBaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
     triggers: List[TaskTrigger] = Field(default_factory=list)
+    display_name: Optional[str]
 
 
 class InvalidTask(HTTPException):
@@ -129,8 +130,9 @@ async def define_task(app: Application, body: DefineTask):
         app_id=app.id,
         name=body.name,
         qualified_name=app.name + "/" + body.name,
-        description=body.name,
+        description=body.description,
         body=body.body,
+        display_name=body.display_name,
         env=body.env,
         app=app,
     )

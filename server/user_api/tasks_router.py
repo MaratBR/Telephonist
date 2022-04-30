@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends
 
-import server.common.internal as _internal
+import server.common.actions as _internal
 from server.common.models import Pagination
 from server.database import (
     Application,

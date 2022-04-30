@@ -8,8 +8,8 @@ from fastapi import APIRouter, Depends
 from fastapi_cache.decorator import cache
 from starlette.responses import Response
 
-from server.common.internal.utils import Errors
-from server.common.models import AppBaseModel, Pagination, convert_to_utc
+from server.common.actions.utils import Errors
+from server.common.models import AppBaseModel, Pagination
 from server.database import (
     Application,
     AppLog,
@@ -26,9 +26,9 @@ events_router = APIRouter(prefix="/events")
 
 
 class EventsPagination(Pagination):
-    default_order_by = "created_at"
+    default_order_by = "t"
     descending_by_default = True
-    ordered_by_options = {"event_type", "task_name", "created_at", "_id"}
+    ordered_by_options = {"event_type", "task_name", "t", "_id"}
 
 
 class EventsFilter(AppBaseModel):
@@ -126,20 +126,19 @@ async def get_sequence(sequence_id: PydanticObjectId):
     )
     app = await Application.get(sequence.app_id)
     assert app, "Application must exist"
+    server_obj = None
+    connection_obj = None
     if sequence.connection_id:
         connection = await ConnectionInfo.get(sequence.connection_id)
-        assert connection, "Connection must exist"
-        server_obj = await Server.find_one({"ip": connection.ip})
-        connection_obj = connection.dict(by_alias=True)
-    else:
-        server_obj = None
-        connection_obj = None
+        if connection:
+            server_obj = await Server.find_one({"ip": connection.ip})
+            connection_obj = connection.dict(by_alias=True)
     logs = (
         await AppLog.find(AppLog.sequence_id == sequence.id)
-        .sort(("created_at", SortDirection.DESCENDING))
-        .limit(100)
+        .sort(("t", SortDirection.DESCENDING))
+        .limit(300)
         .to_list()
-    )
+    )[::-1]
     return {
         **sequence.dict(by_alias=True, exclude={"app_id", "connection_id"}),
         "app": app.dict(
@@ -147,15 +146,6 @@ async def get_sequence(sequence_id: PydanticObjectId):
         ),
         "connection": connection_obj,
         "host": server_obj,
-        "logs": [
-            {
-                "_id": l.id,
-                "t": convert_to_utc(l.created_at),
-                "body": l.body,
-                "severity": l.severity,
-            }
-            for l in logs
-        ],
     }
 
 

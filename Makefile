@@ -26,7 +26,6 @@ run-docker-image:
 	docker run \
 		--name telephonist-test-run-$(VERSION) \
 		-e TELEPHONIST_BACKPLANE_BACKEND=memory \
-		-e TELEPHONIST_SESSION_BACKEND=memory \
 		-e TELEPHONIST_DISABLE_SSL=True \
 		telephonist:$(VERSION)
 

@@ -1,21 +1,17 @@
-from datetime import datetime
 from typing import Any, List, Optional
 
 from beanie import PydanticObjectId
-from pydantic import validator
 
 from server.common.channels import get_channel_layer
-from server.common.models import AppBaseModel, convert_to_utc
+from server.common.models import AppBaseModel
 from server.database import AppLog, Severity
 
 
 class LogRecord(AppBaseModel):
-    t: datetime
+    t: int
     severity: Severity
     body: str
     extra: Optional[dict[str, Any]]
-
-    _t_validator = validator("t", allow_reuse=True)(convert_to_utc)
 
 
 async def send_logs(
@@ -29,7 +25,7 @@ async def send_logs(
         AppLog(
             body=log.body,
             app_id=app_id,
-            created_at=log.t,
+            t=log.t,
             severity=log.severity,
             sequence_id=sequence_id,
         )

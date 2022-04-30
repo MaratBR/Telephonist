@@ -159,7 +159,7 @@ class Hub:
         Метод, вызываемый при возникновении неожиданного исключения.
         :param exception:
         """
-        await self.send_error(exception, kind="internal")
+        await self.send_error(exception, kind="actions")
         _logger.exception(str(exception))
 
     async def read_message(self) -> HubMessage:
