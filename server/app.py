@@ -195,6 +195,7 @@ def create_debug_app():
         def render(self, content: Any) -> bytes:
             return orjson.dumps(content, option=orjson.OPT_INDENT_2)
 
-    return TelephonistApp(
+    app = TelephonistApp(
         DebugSettings(), default_response_class=ORJSONIdentResponse
     )
+    return app

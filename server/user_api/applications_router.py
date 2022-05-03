@@ -190,6 +190,8 @@ async def delete_request_code(code: str = Query(...)):
 class CRFinishRequest(AppBaseModel):
     name: str
     description: str
+    display_name: str
+    tags: list[str]
 
 
 class CRFinishResponse(AppBaseModel):
@@ -197,14 +199,19 @@ class CRFinishResponse(AppBaseModel):
     id: PydanticObjectId
 
 
-@applications_router.post("/cr/finish/{code}", response_model=CRFinishResponse)
+@applications_router.post("/cr", response_model=CRFinishResponse)
 async def finish_code_registration(code: str, body: CRFinishRequest):
-    code_inst = await OneTimeSecurityCode.get_valid_code("new_app_code", code)
+    code_inst = await OneTimeSecurityCode.get_valid_code("new_app", code)
     if code_inst is None:
         raise HTTPException(404, "code does not exist or expired")
     if not code_inst.confirmed:
         raise HTTPException(401, "code is not confirmed yet")
-    app = Application(name=body.name, description=body.description)
+    app = Application(
+        name=body.name,
+        description=body.description,
+        tags=body.tags,
+        display_name=body.display_name,
+    )
     await code_inst.save()
     await code_inst.delete()
     return {"access_key": app.access_key, "id": app.id}
