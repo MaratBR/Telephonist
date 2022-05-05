@@ -35,8 +35,9 @@ Helm:
 helm upgrade --install ingress-nginx ingress-nginx   --repo https://kubernetes.github.io/ingress-nginx   --namespace ingress-nginx --create-namespace
 ```
 
-Serverc/client:
+Server/client:
 ```shell
+# With SSL
 docker run \
   -e TELEPHONIST_SECRET=secret \
   -e TELEPHONIST_SSL_CERT=/certs/cert.crt \
@@ -47,7 +48,8 @@ docker run \
   --net=host \
   maratbr/telephonist:latest
   
-docker run \
+# Without SSL AND behind proxy
+sudo docker run \
   -e TELEPHONIST_SECRET=secret \
   -e TELEPHONIST_DISABLE_SSL=True \
   -e TELEPHONIST_DB_URL=mongodb://127.0.0.1:27017 \
@@ -55,6 +57,7 @@ docker run \
   -e TELEPHONIST_COOKIES_POLICY=Lax \
   -e TELEPHONIST_USE_NON_SECURE_COOKIES=True \
   -e TELEPHONIST_PORT=30890 \
+  -e TELEPHONIST_PROXY_HEADERS=True \
   --name telephonist \
   -d \
   --net=host \
@@ -63,5 +66,6 @@ docker run \
 docker run \
   -e API_URL=/ \
   -p 8080:80 \
+  --name telephonist-admin \
   maratbr/telephonist-admin:latest 
 ```

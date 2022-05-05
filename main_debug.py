@@ -38,5 +38,4 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process some integers.")
     parser.add_argument("--reload", action="store_const", const=True)
     sys_args = parser.parse_args(sys.argv[1:])
-
     main(reload=sys_args.reload)

@@ -1,6 +1,5 @@
 import logging
 import time
-from datetime import datetime
 from typing import Any, Callable, Coroutine, Optional, cast
 
 import aioredis
@@ -69,7 +68,6 @@ class TelephonistApp(FastAPI):
             "/", cast(Callable[[], Coroutine[Any, Any, Response]], self._index)
         )
         self.add_api_route("/api/hc", self._hc)
-        self.add_api_route("/api/summary", self.summary)
 
         self.add_api_route(
             "/api/__debug__",
@@ -120,24 +118,6 @@ class TelephonistApp(FastAPI):
 
     async def _hc(self):
         return {"modules": {"backplane": await self._backplane_hc()}}
-
-    async def summary(self):
-        now = datetime.now()
-        local_now = now.astimezone()
-        local_tz = local_now.tzinfo
-        local_tzname = local_tz.tzname(local_now)
-        return {
-            "timezone": {
-                "name": local_tzname,
-                "offset_seconds": local_tz.utcoffset(
-                    local_now
-                ).total_seconds(),
-            },
-            "settings": {
-                "cookies_policy": self.settings.cookies_policy,
-                "non_secure_cookies": self.settings.use_non_secure_cookies,
-            },
-        }
 
     async def _on_startup(self):
         try:

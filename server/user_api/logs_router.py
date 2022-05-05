@@ -3,7 +3,7 @@ from typing import Optional
 from beanie import PydanticObjectId
 from beanie.odm.enums import SortDirection
 from beanie.operators import In
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import ORJSONResponse
 
 from server.database import Application, AppLog, EventSequence, Severity
@@ -59,7 +59,8 @@ async def get_logs(
     elif app_id:
         find.append(AppLog.app_id == app_id)
         app = await Application.get(app_id)
-
+        if app is None:
+            raise HTTPException(404, "Application not found")
         app = {
             "_id": str(app.id),
             "name": app.name,

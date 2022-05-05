@@ -1,10 +1,11 @@
-import datetime
+from datetime import datetime
 
 from beanie.odm.enums import SortDirection
 from fastapi import APIRouter, Depends
 from starlette.requests import Request
 from starlette.responses import Response
 
+from server import VERSION
 from server.auth.actions import renew_session, set_session
 from server.auth.dependencies import require_session, validate_csrf_token
 from server.auth.models import UserSession
@@ -17,6 +18,7 @@ from server.database import (
     EventSequenceState,
     get_database,
 )
+from server.settings import settings
 from server.user_api.applications_router import applications_router
 from server.user_api.auth import auth_router
 from server.user_api.connections_router import connections_router
@@ -32,7 +34,7 @@ async def require_session_or_renew(
     response: Response,
     session: UserSession = Depends(require_session),
 ):
-    if session.renew_at and session.renew_at < datetime.datetime.utcnow():
+    if session.renew_at and session.renew_at < datetime.utcnow():
         new_session = await renew_session(request, session)
         set_session(response, new_session)
         request.scope["app_session"] = new_session
@@ -89,18 +91,15 @@ async def get_stats():
             "count": await EventSequence.find(
                 EventSequence.state == EventSequenceState.IN_PROGRESS,
                 EventSequence.created_at
-                >= datetime.datetime.utcnow().replace(
+                >= datetime.utcnow().replace(
                     hour=0, minute=0, second=0, microsecond=0
                 ),
             ).count(),
             "list": await EventSequence.find(
                 EventSequence.state == EventSequenceState.IN_PROGRESS,
                 EventSequence.created_at
-                >= int(
-                    datetime.datetime.utcnow()
-                    .replace(hour=0, minute=0, second=0, microsecond=0)
-                    .timestamp()
-                    * 1_000_000
+                >= datetime.utcnow().replace(
+                    hour=0, minute=0, second=0, microsecond=0
                 ),
             )
             .sort(("_id", SortDirection.DESCENDING))
@@ -130,4 +129,26 @@ async def get_stats():
                 for col_name, stats in collection_stats.items()
             },
         },
+    }
+
+
+@user_api.get("/summary")
+async def summary():
+    now = datetime.now()
+    local_now = now.astimezone()
+    local_tz = local_now.tzinfo
+    local_tzname = local_tz.tzname(local_now)
+
+    return {
+        "timezone": {
+            "name": local_tzname,
+            "offset_seconds": local_tz.utcoffset(
+                local_now
+            ).total_seconds(),
+        },
+        "settings": {
+            "cookies_policy": settings.get().cookies_policy,
+            "non_secure_cookies": settings.get().use_non_secure_cookies,
+        },
+        "version": VERSION
     }

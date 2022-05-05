@@ -20,18 +20,18 @@ lint:
 
 docker-image:
 	@echo "Building docker image telephonist:$(VERSION)"
-	docker build -t maratbr/telephonist:$(VERSION) -t maratbr/telephonist:latest .
+	sudo docker build -t maratbr/telephonist:$(VERSION) -t maratbr/telephonist:latest .
 
 run-docker-image:
-	docker run \
+	sudo docker run \
 		--name telephonist-test-run-$(VERSION) \
 		-e TELEPHONIST_BACKPLANE_BACKEND=memory \
 		-e TELEPHONIST_DISABLE_SSL=True \
 		telephonist:$(VERSION)
 
 publish:
-	docker push maratbr/telephonist:$(VERSION)
-	docker push maratbr/telephonist:latest
+	sudo docker push maratbr/telephonist:$(VERSION)
+	sudo docker push maratbr/telephonist:latest
 
 run-non-secure-all-in-one:
 	cd ./docker; SECRET=not_a_secret_obviosly docker-compose up
