@@ -38,7 +38,6 @@ def mongodb_server():
 
 
 def create_test_app():
-
     app = TelephonistApp(TestingSettings())
 
     @app.on_event("startup")

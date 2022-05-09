@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from beanie.odm.enums import SortDirection
 from fastapi import APIRouter, Depends
@@ -74,33 +74,36 @@ async def get_stats():
         )
         for model in models
     }
+
+    week_ago = (datetime.utcnow() - timedelta(days=7)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
     counters = await Counter.get_counters(
         {"finished_sequences", "sequences", "failed_sequences", "events"}
     )
-    failed_sequences = (
-        await EventSequence.find(
-            EventSequence.state == EventSequenceState.FAILED
-        )
-        .sort(("_id", SortDirection.DESCENDING))
-        .limit(7)
-        .to_list()
-    )
     return {
         "counters": counters,
+        "successful_sequences": {
+            "list": await EventSequence.find(
+                EventSequence.state == EventSequenceState.SUCCEEDED,
+                EventSequence.created_at >= week_ago,
+            )
+            .sort(("_id", SortDirection.DESCENDING))
+            .limit(20)
+            .to_list(),
+            "count": await EventSequence.find(
+                EventSequence.state == EventSequenceState.SUCCEEDED,
+                EventSequence.created_at >= week_ago,
+            ).count(),
+        },
         "in_progress_sequences": {
             "count": await EventSequence.find(
                 EventSequence.state == EventSequenceState.IN_PROGRESS,
-                EventSequence.created_at
-                >= datetime.utcnow().replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                ),
+                EventSequence.created_at >= week_ago,
             ).count(),
             "list": await EventSequence.find(
                 EventSequence.state == EventSequenceState.IN_PROGRESS,
-                EventSequence.created_at
-                >= datetime.utcnow().replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                ),
+                EventSequence.created_at >= week_ago,
             )
             .sort(("_id", SortDirection.DESCENDING))
             .limit(20)
@@ -108,9 +111,15 @@ async def get_stats():
         },
         "failed_sequences": {
             "count": await EventSequence.find(
-                EventSequence.state == EventSequenceState.FAILED
+                EventSequence.state == EventSequenceState.FAILED,
+                EventSequence.created_at >= week_ago,
             ).count(),
-            "list": failed_sequences,
+            "list": await EventSequence.find(
+                EventSequence.state == EventSequenceState.FAILED
+            )
+            .sort(("_id", SortDirection.DESCENDING))
+            .limit(7)
+            .to_list(),
         },
         "db": {
             "stats": {
@@ -142,13 +151,11 @@ async def summary():
     return {
         "timezone": {
             "name": local_tzname,
-            "offset_seconds": local_tz.utcoffset(
-                local_now
-            ).total_seconds(),
+            "offset_seconds": local_tz.utcoffset(local_now).total_seconds(),
         },
         "settings": {
             "cookies_policy": settings.get().cookies_policy,
             "non_secure_cookies": settings.get().use_non_secure_cookies,
         },
-        "version": VERSION
+        "version": VERSION,
     }
