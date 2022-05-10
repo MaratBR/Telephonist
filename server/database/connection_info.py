@@ -11,7 +11,6 @@ from pymongo.client_session import ClientSession
 
 from server.common.models import AppBaseModel, BaseDocument, convert_to_utc
 from server.database.registry import register_model
-from server.settings import settings
 
 _logger = logging.getLogger("telephonist.database")
 
@@ -148,25 +147,6 @@ class ConnectionInfo(BaseDocument):
             connection.ip = ip_address
             await connection.save_changes()
         return connection
-
-    @classmethod
-    async def on_database_ready(cls):
-        query = ConnectionInfo.find({"is_connected": True})
-        hanging_connections = await query.count()
-        if hanging_connections > 0:
-            _logger.warning(
-                "There's %d hanging connections in the database, this means"
-                " that either there's more than 1 instance of Telephonist"
-                " running with this database or Telephonist exited"
-                " unexpectedly",
-                hanging_connections,
-            )
-            if settings.get().hanging_connections_policy == "remove":
-                _logger.warning(
-                    'settings.hanging_connections_policy is set to "remove",'
-                    " all hanging connections will be removed"
-                )
-                await query.delete()
 
     class Settings:
         use_state_management = True

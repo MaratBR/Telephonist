@@ -4,7 +4,7 @@ from typing import Optional, Union
 from beanie import PydanticObjectId
 from beanie.odm.enums import SortDirection
 from beanie.odm.operators.find.comparison import In
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi_cache.decorator import cache
 from starlette.responses import Response
 
@@ -75,6 +75,7 @@ async def get_events(
 class SequencesPagination(Pagination):
     max_page_size = 100
     descending_by_default = True
+    default_order_by = "created_at"
 
 
 class SequenceFilter(AppBaseModel):
@@ -84,25 +85,21 @@ class SequenceFilter(AppBaseModel):
 
 @events_router.get("/sequences")
 async def get_sequences(
+    state: list[EventSequenceState] = Query([]),
     pagination: SequencesPagination = Depends(),
-    query=Querydict(SequenceFilter),
+    app_id: Optional[PydanticObjectId] = None,
 ):
     find = []
-    if query.app_id:
-        find.append(EventSequence.app_id == query.app_id)
-    if query.state:
-        if isinstance(query.state, list):
-            find.append(In("state", query.state))
-        else:
-            find.append(EventSequence.state == query.state)
+    if app_id:
+        find.append(EventSequence.app_id == app_id)
+    if state:
+        find.append(In("state", state))
 
-    if query.app_id:
-        failed = await Counter.get_counter(
-            f"failed_sequences/app/{query.app_id}"
-        )
-        total = await Counter.get_counter(f"sequences/app/{query.app_id}")
+    if app_id:
+        failed = await Counter.get_counter(f"failed_sequences/app/{app_id}")
+        total = await Counter.get_counter(f"sequences/app/{app_id}")
         finished = await Counter.get_counter(
-            f"finished_sequences/app/{query.app_id}"
+            f"finished_sequences/app/{app_id}"
         )
     else:
         failed = await Counter.get_counter(f"failed_sequences")
@@ -114,6 +111,7 @@ async def get_sequences(
             await pagination.paginate(EventSequence, filter_condition=find)
         ).dict(by_alias=True),
         "counters": {"failed": failed, "total": total, "finished": finished},
+        "state": state,
     }
 
 

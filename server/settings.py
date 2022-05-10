@@ -35,7 +35,6 @@ class Settings(BaseSettings):
     # other
     user_registration_unix_socket_only: bool = True
     unix_socket_name: str = "unix"
-    hanging_connections_policy: str = "remove"
     cookies_policy: str = "Lax"
     use_non_secure_cookies: bool = False
     use_capped_collection_for_logs: bool = True

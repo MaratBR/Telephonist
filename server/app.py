@@ -16,6 +16,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
+from server import VERSION
 from server.application_api import application_api
 from server.common.channels import get_channel_layer
 from server.common.channels.backplane import (
@@ -120,6 +121,12 @@ class TelephonistApp(FastAPI):
         return {"modules": {"backplane": await self._backplane_hc()}}
 
     async def _on_startup(self):
+        self.logger.info(f"RUNNING TELEPHONIST VERSION {VERSION}")
+        self.logger.info(f"\tcookies_policy = {self.settings.cookies_policy}")
+        self.logger.info(f"\tcors_origins = {self.settings.cors_origins}")
+        self.logger.info(f"\tdb_url = {self.settings.db_url}")
+        self.logger.info(f"\tredis_url = {self.settings.redis_url}")
+
         try:
             FastAPICache.init(InMemoryBackend())
             await init_database(

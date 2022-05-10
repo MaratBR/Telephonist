@@ -3,6 +3,7 @@ import os
 import sys
 from functools import wraps
 
+import motor.motor_asyncio
 from pymongo.errors import DuplicateKeyError
 
 from server.common.actions import create_sequence_and_start_event
@@ -30,7 +31,7 @@ from server.database import (
     init_database,
 )
 from server.database.task import ApplicationTask, TaskBody, TaskTypesRegistry
-from server.settings import DebugSettings, use_settings
+from server.settings import DebugSettings, settings
 
 
 def catch_duplicate_errors(fn):
@@ -169,8 +170,12 @@ async def clean_database():
 
 async def populate():
     await start_backplane(InMemoryBackplane())
-    use_settings(DebugSettings)
-    await init_database()
+    settings_value = DebugSettings()
+    settings.set(settings_value)
+    await init_database(
+        motor.motor_asyncio.AsyncIOMotorClient(settings_value.db_url),
+        settings_value.mongodb_db_name,
+    )
     await clean_database()
     await populate_application("test_application_1")
     await populate_application("test_application_2")
@@ -179,8 +184,7 @@ async def populate():
 
 
 if __name__ == "__main__":
-    if os.environ.get("TELEPHONIST_POPULATION") != "I KNOW WHAT I AM DOING":
-        print(os.environ)
+    if os.environ.get("TELEPHONIST_POPULATION") != "YES":
         print("WARNING!!!", file=sys.stderr)
         print(
             "This script will COMPLETELY clear the database and then populate"
@@ -188,8 +192,8 @@ if __name__ == "__main__":
             file=sys.stderr,
         )
         print(
-            'You must set TELEPHONIST_POPULATION env variable to "I KNOW WHAT'
-            ' I AM DOING" to proceed',
+            'You must set TELEPHONIST_POPULATION env variable to "YES" to'
+            " proceed",
             file=sys.stderr,
         )
         exit(0)
