@@ -142,7 +142,7 @@ async def get_stats():
 
 
 @user_api.get("/summary")
-async def summary():
+async def summary(request: Request):
     now = datetime.now()
     local_now = now.astimezone()
     local_tz = local_now.tzinfo
@@ -158,4 +158,5 @@ async def summary():
             "non_secure_cookies": settings.get().use_non_secure_cookies,
         },
         "version": VERSION,
+        "detected_locale": request.scope.get("locale"),
     }

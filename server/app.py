@@ -28,6 +28,7 @@ from server.common.channels.backplane import (
     stop_backplane,
 )
 from server.database import init_database, shutdown_database
+from server.l10n import Localization
 from server.settings import DebugSettings, Settings, settings
 from server.user_api import user_api
 
@@ -49,6 +50,10 @@ class TelephonistApp(FastAPI):
             or motor.motor_asyncio.AsyncIOMotorClient(settings.db_url)
         )
         self.logger = logging.getLogger("telephonist.application")
+        self.localization = Localization(
+            localedir="./locales", supported_locales=["en_US", "ru_RU"]
+        )
+        self.add_middleware(self.localizatiohttps://localhost:5789/api/user-v1/events/sequencesn.middleware)
         self.add_middleware(
             CORSMiddleware,
             allow_origins=self.settings.cors_origins,

@@ -10,6 +10,7 @@ from starlette.requests import Request
 from starlette.status import HTTP_403_FORBIDDEN
 
 from server.exceptions import ApiException
+from server.l10n import gettext as _
 
 from .exceptions import AuthError, UserNotFound
 from .models import User, UserSession
@@ -85,7 +86,9 @@ basic = HTTPBasic(auto_error=False)
 
 def require_bearer(token: Optional[str] = Depends(bearer)):
     if token is None:
-        raise ApiException(401, "auth.no_token", "token is missing")
+        raise ApiException(
+            401, "auth.no_token", _("Authorization token is missing")
+        )
     return token
 
 
@@ -103,7 +106,7 @@ csrf_token = CSRFToken(
 
 def require_session_cookie(session_id: str = Depends(session_cookie)):
     if session_id is None:
-        raise AuthError(401, "auth.no_session", "Session cookie is missing")
+        raise AuthError(401, "auth.no_session", _("Session cookie is missing"))
     return session_id
 
 
@@ -124,7 +127,7 @@ async def require_session(
     data = await UserSession.find_one({"_id": session_id})
     if data is None:
         raise AuthError(
-            401, "auth.no_session", "Invalid or expired session cookie"
+            401, "auth.no_session", _("Invalid or expired session cookie")
         )
     return data
 
@@ -165,7 +168,9 @@ def CurrentUser(required: bool = True) -> User:  # noqa
 
 def superuser(session: UserSession = Depends(require_session)):
     if not session.is_superuser:
-        raise AuthError(401, "You're not a superuser!")
+        raise AuthError(
+            401, "auth.not_superuser", _("You're not a superuser!")
+        )
     return session
 
 
@@ -181,7 +186,7 @@ def validate_csrf_token(
         return
     if token is None:
         raise HTTPException(
-            HTTP_403_FORBIDDEN, "CSRF token is missing", headers={}
+            HTTP_403_FORBIDDEN, _("CSRF token is missing"), headers={}
         )
     if token != session.csrf_token:
-        raise HTTPException(HTTP_403_FORBIDDEN, "CSRF token mismatch")
+        raise HTTPException(HTTP_403_FORBIDDEN, _("CSRF token mismatch"))

@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import sys
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -73,7 +72,6 @@ class Connection(HubProxy):
             try:
                 message = await self.get_next_message()
             except Exception as exc:
-                print("failed to get next message", exc, file=sys.stderr)
                 continue
             if message:
                 yield message

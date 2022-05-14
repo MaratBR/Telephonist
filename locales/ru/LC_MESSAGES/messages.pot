@@ -1,0 +1,43 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR ORGANIZATION
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Telephonist\n"
+"POT-Creation-Date: 2022-05-14 19:09+0700\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: Marat Burnaevv <marat01q@gmail.com>\n"
+"Language: Russian (Русский)\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: pygettext.py 1.5\n"
+
+#: server/auth/dependencies.py:90
+msgid "Authorization token is missing"
+msgstr "Токен авторизации не указан"
+
+#: server/auth/dependencies.py:108
+msgid "Session cookie is missing"
+msgstr "Сессионный куки отсутсвует"
+
+#: server/auth/dependencies.py:129
+msgid "Invalid or expired session cookie"
+msgstr "Неверная или истекшая сессия"
+
+#: server/auth/dependencies.py:170
+msgid "You're not a superuser!"
+msgstr "Вы не суперпользователь"
+
+#: server/auth/dependencies.py:186
+msgid "CSRF token is missing"
+msgstr "CSRF токен отсутсвует"
+
+#: server/auth/dependencies.py:189
+msgid "CSRF token mismatch"
+msgstr "Указан неверный CSRF токен"
+
+#: server/user_api/auth.py:75
+msgid "User with given credentials not found"
+msgstr "Пользователь с указанным логином и паролем не найден"

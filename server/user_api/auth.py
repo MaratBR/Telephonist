@@ -19,6 +19,7 @@ from server.auth.token import JWT, PasswordResetToken
 from server.auth.utils import hash_password, mask_hex_token, verify_password
 from server.common.models import AppBaseModel
 from server.exceptions import ApiException
+from server.l10n import gettext as _
 from server.settings import settings
 
 auth_router = fastapi.routing.APIRouter(tags=["auth"], prefix="/auth")
@@ -71,7 +72,7 @@ async def login_user(
         credentials.username, credentials.password
     )
     if user is None:
-        raise HTTPException(401, "User with given credentials not found")
+        raise HTTPException(401, _("User with given credentials not found"))
     if user.is_blocked:
         raise HTTPException(401, "User is blocked")
 
