@@ -53,7 +53,7 @@ class TelephonistApp(FastAPI):
         self.localization = Localization(
             localedir="./locales", supported_locales=["en_US", "ru_RU"]
         )
-        self.add_middleware(self.localizatiohttps://localhost:5789/api/user-v1/events/sequencesn.middleware)
+        self.add_middleware(self.localization.middleware)
         self.add_middleware(
             CORSMiddleware,
             allow_origins=self.settings.cors_origins,

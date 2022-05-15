@@ -94,7 +94,7 @@ async def get_application(app_id_or_name: str):
         .sort(("connected_at", SortDirection.DESCENDING))
         .to_list()
     )
-    tasks = (
+    tasks: list[ApplicationTask] = (
         await ApplicationTask.not_deleted()
         .find(ApplicationTask.app_id == app.id)
         .to_list()
@@ -119,10 +119,45 @@ async def get_application(app_id_or_name: str):
         )
     else:
         completed_sequences = []
+
+    async def get_task_info(task: ApplicationTask):
+        ongoing_sequences_count = await EventSequence.find(
+            EventSequence.task_id == task.id,
+            EventSequence.state == EventSequenceState.IN_PROGRESS,
+        ).count()
+        last_sequence: EventSequence = await (
+            EventSequence.find(EventSequence.task_id == task.id)
+            .sort(("created_at", SortDirection.DESCENDING))
+            .limit(1)
+            .to_list()
+        )
+        last_sequence = last_sequence[0].dict(
+                by_alias=True,
+                include={
+                    "id",
+                    "state",
+                    "error",
+                    "name",
+                    "created_at",
+                    "connection_id",
+                },
+            ) if len(last_sequence) == 1 else None
+
+        return {
+            "ongoing": ongoing_sequences_count,
+            "last_sequence": last_sequence,
+        }
+
     return {
         "app": app,
         "connections": connections,
-        "tasks": tasks,
+        "tasks": [
+            {
+                **t.dict(by_alias=True),
+                "sequence_info": await get_task_info(t)
+            }
+            for t in tasks
+        ],
         "sequences": {
             "completed": completed_sequences,
             "in_progress": in_progress_sequences,

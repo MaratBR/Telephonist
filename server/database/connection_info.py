@@ -49,6 +49,9 @@ class ConnectionInfo(BaseDocument):
     is_connected: bool = False
     event_subscriptions: List[str] = Field(default_factory=list)
 
+    class Capabilities:
+        supported_task_types: Optional[list[str]]
+
     _at_validator = validator(
         "connected_at", "disconnected_at", allow_reuse=True
     )(convert_to_utc)
