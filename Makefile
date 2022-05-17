@@ -2,6 +2,7 @@ isort := isort
 black := black
 autoflake := autoflake
 VERSION := $(shell scripts/get_version.py)
+UI_VERSION := 0.2.4
 AUTOFLAKE_ARGS := -r --ignore-init-module-imports --expand-star-imports --remove-all-unused-imports --remove-duplicate-keys -i
 
 init:
@@ -19,9 +20,21 @@ lint:
 	$(isort) --check-only --df .
 	$(black) --check --diff
 
-docker-image: mo format
+docker-image__main:
 	@echo "Building docker image telephonist:$(VERSION)"
 	sudo docker build -t maratbr/telephonist:$(VERSION) -t maratbr/telephonist:latest .
+
+docker-image__allinone:
+	@echo "Building docker image telephonist-all-in-one:$(VERSION)"
+	sudo docker build \
+		-t maratbr/telephonist-all-in-one:$(VERSION) \
+		-t maratbr/telephonist-all-in-one:latest \
+		-f ./AllInOne.dockerfile \
+		.
+
+
+docker-image: mo format docker-image__main docker-image__allinone
+
 
 run-docker-image:
 	sudo docker run \
@@ -33,6 +46,8 @@ run-docker-image:
 publish:
 	sudo docker push maratbr/telephonist:$(VERSION)
 	sudo docker push maratbr/telephonist:latest
+	sudo docker push maratbr/telephonist-all-in-one:$(VERSION)
+	sudo docker push maratbr/telephonist-all-in-one:latest
 
 run-non-secure-all-in-one:
 	cd ./docker; SECRET=not_a_secret_obviosly docker-compose up

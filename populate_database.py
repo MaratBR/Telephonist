@@ -118,7 +118,6 @@ async def populate_application(name: str):
             sequence_id=seq.id,
             app_id=seq.app_id,
             task_id=seq.task_id,
-            is_skipped=False,
         )
     )
 
@@ -142,7 +141,6 @@ async def populate_application(name: str):
                 app_id=seq.app_id,
                 task_id=seq.task_id,
                 error="Something went very wrong!",
-                is_skipped=False,
             )
         )
 

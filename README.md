@@ -7,27 +7,26 @@ sudo docker run -p 6379:6379 redis
 
 Running database:
 ```shell
-sudo docker volume rm mongodb_volume
 sudo docker volume create mongodb_volume
-sudo docker container rm mongodb_database -f
 sudo docker run\
   -d\
   --name mongodb_database\
   -p 27017:27017\
   --restart always\
   --mount source=mongodb_volume,target=/data\
+  -e MONGO_INITDB_ROOT_USERNAME="MONGODB_USERNAME"\
+  -e MONGO_INITDB_ROOT_PASSWORD="MONGODB_PASSWORD"\
   mongo
 ```
 
 Running redis:
 ```shell
-sudo docker container rm redis_service -f
 sudo docker run \
   -d \
   --name redis_service \
   -p 6379:6379 \
   --restart always \
-  redis
+  redis redis-server --appendonly yes  --requirepass "REDIS_PASSWORD" 
 ```
 
 Helm:
@@ -36,6 +35,17 @@ helm upgrade --install ingress-nginx ingress-nginx   --repo https://kubernetes.g
 ```
 
 Server/client:
+```shell
+sudo docker run\
+  -d\
+  -e TELEPHONIST_REDIS_URL="redis://localhost:6379/?password=REDIS_PASSWORD"\
+  -e TELEPHONIST_DB_URL="mongodb://MONGODB_USERNAME:MONGODB_PASSWORD@localhost:27017"\
+  --name telephonist_all_in_one\
+  --restart always\
+  -e TELEPHONIST_SECRET="SECRET_KEY"\
+  maratbr/telephonist-all-in-one
+```
+
 ```shell
 # With SSL
 docker run \

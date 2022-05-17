@@ -41,6 +41,7 @@ class EventSequence(BaseDocument):
     description: Optional[str]
     meta: Optional[dict[str, Any]]
     state: EventSequenceState = EventSequenceState.IN_PROGRESS
+    state_updated_at: Optional[datetime]
     task_name: str  # fully qualified task name (application/task_name)
     task_id: UUID
     expires_at: datetime = Field(

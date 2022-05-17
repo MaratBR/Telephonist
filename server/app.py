@@ -15,6 +15,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
+from starlette.types import Receive, Scope, Send
 
 from server import VERSION
 from server.application_api import application_api
@@ -30,6 +31,7 @@ from server.common.channels.backplane import (
 from server.database import init_database, shutdown_database
 from server.l10n import Localization
 from server.settings import DebugSettings, Settings, settings
+from server.spa import SPA
 from server.user_api import user_api
 
 
@@ -53,26 +55,21 @@ class TelephonistApp(FastAPI):
         self.localization = Localization(
             localedir="./locales", supported_locales=["en_US", "ru_RU"]
         )
-        self.add_middleware(self.localization.middleware)
-        self.add_middleware(
-            CORSMiddleware,
-            allow_origins=self.settings.cors_origins,
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=[
-                "X-CSRF-Token",
-                "Authorization",
-                "Content-Type",
-            ],
-        )
-        self.middleware("http")(self._generate_request_id)
+        self._init_middlewares()
         self._init_routers()
+
+        if settings.spa_path:
+            self.mount(
+                "/",
+                SPA(
+                    directory=settings.spa_path,
+                    api_path_check=lambda path: path.startswith("api/")
+                    or path == "api",
+                ),
+            )
 
         self.add_event_handler("startup", self._on_startup)
         self.add_event_handler("shutdown", self._on_shutdown)
-        self.add_api_route(
-            "/", cast(Callable[[], Coroutine[Any, Any, Response]], self._index)
-        )
         self.add_api_route("/api/hc", self._hc)
 
         self.add_api_route(
@@ -90,9 +87,9 @@ class TelephonistApp(FastAPI):
         response.headers["X-Request-ID"] = request.scope["request-id"]
         return response
 
-    async def __call__(self, *args, **kwargs):
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
         settings.set(self.settings)
-        await super(TelephonistApp, self).__call__(*args, **kwargs)
+        await super(TelephonistApp, self).__call__(scope, receive, send)
 
     async def __debug_route__(self, request: Request):
         return {
@@ -176,6 +173,21 @@ class TelephonistApp(FastAPI):
     def _init_routers(self):
         self.include_router(user_api, prefix="/api/user-v1")
         self.include_router(application_api, prefix="/api/application-v1")
+
+    def _init_middlewares(self):
+        self.add_middleware(self.localization.middleware)
+        self.add_middleware(
+            CORSMiddleware,
+            allow_origins=self.settings.cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=[
+                "X-CSRF-Token",
+                "Authorization",
+                "Content-Type",
+            ],
+        )
+        self.middleware("http")(self._generate_request_id)
 
 
 def create_production_app():

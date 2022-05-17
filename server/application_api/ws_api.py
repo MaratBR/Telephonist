@@ -128,9 +128,17 @@ class AppReportHub(Hub):
             await self._connection_info.save_changes()
             await _internal.notify_connection_changed(self._connection_info)
             q = EventSequence.find(
-                EventSequence.connection_id == self._connection_info.id
+                EventSequence.connection_id == self._connection_info.id,
+                EventSequence.state == EventSequenceState.IN_PROGRESS,
             )
-            await q.update({"$set": {"status": EventSequenceState.FROZEN}})
+            await q.update(
+                {
+                    "$set": {
+                        "state": EventSequenceState.FROZEN,
+                        "state_updated_at": datetime.utcnow(),
+                    }
+                }
+            )
             sequences = await q.to_list()
             for seq in sequences:
                 await _internal.notify_sequence_changed(seq)
@@ -157,8 +165,6 @@ class AppReportHub(Hub):
         if message.subscriptions:
             await self.set_subscriptions(message.subscriptions)
         await self.connection.add_to_group(f"a/{self._app_id}")
-        # TODO find and unfreeze all frozen tasks
-        # TODO #2 ask the client regarding those sequences
         await self.send_message(
             "greetings",
             {
@@ -204,9 +210,10 @@ class AppReportHub(Hub):
             EventSequence.connection_id == self._connection_info,
             EventSequence.state == EventSequenceState.FROZEN,
         ).to_list()
-        await self.send_message(
-            "detected_orphans", {"ids": [str(s.id) for s in frozen]}
-        )
+        if len(frozen) > 0:
+            await self.send_message(
+                "detected_orphans", {"ids": [str(s.id) for s in frozen]}
+            )
 
     @bind_message("set_subscriptions")
     @_if_ready_only

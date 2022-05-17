@@ -1,5 +1,7 @@
 import contextvars
 import enum
+import secrets
+import warnings
 from datetime import timedelta
 from typing import List, Optional
 
@@ -13,8 +15,6 @@ class Settings(BaseSettings):
     mongodb_db_name: str = "telephonist"
     db_url: Optional[str] = "mongodb://127.0.0.1:27017"
     redis_url: Optional[str] = "redis://127.0.0.1:6379"
-    session_redis_url: Optional[str] = None
-    messaging_redis_url: Optional[str] = None
 
     # authentication, secret, access control
     secret: SecretStr
@@ -42,9 +42,29 @@ class Settings(BaseSettings):
     root_path: str = "/api/v1"
     is_testing: bool = False
 
+    # spa
+    spa_path: Optional[str]
+
     class Config:
         env_prefix = "telephonist_"
         env_file = ".env"
+
+
+_generated_secret = secrets.token_urlsafe(64)
+
+
+class ProductionSettings(BaseSettings):
+    secret: SecretStr = _generated_secret
+
+    def __init__(self, **kwargs):
+        super(ProductionSettings, self).__init__(**kwargs)
+        if self.secret == _generated_secret:
+            warnings.warn(
+                "Application secret key is missing. This will cause all"
+                " sessions and tokens to be invalidated on each restart."
+                " Please set secret key through TELEPHONIST_SECRET environment"
+                " variable"
+            )
 
 
 class DebugSettings(Settings):

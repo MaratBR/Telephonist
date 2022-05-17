@@ -215,7 +215,6 @@ async def finish_sequence(
             sequence_id=sequence.id,
             app_id=sequence.app_id,
             task_id=sequence.task_id,
-            is_skipped=False,
         )
     )
     logger.debug(

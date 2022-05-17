@@ -131,7 +131,8 @@ async def get_application(app_id_or_name: str):
             .limit(1)
             .to_list()
         )
-        last_sequence = last_sequence[0].dict(
+        last_sequence = (
+            last_sequence[0].dict(
                 by_alias=True,
                 include={
                     "id",
@@ -141,7 +142,10 @@ async def get_application(app_id_or_name: str):
                     "created_at",
                     "connection_id",
                 },
-            ) if len(last_sequence) == 1 else None
+            )
+            if len(last_sequence) == 1
+            else None
+        )
 
         return {
             "ongoing": ongoing_sequences_count,
@@ -152,10 +156,7 @@ async def get_application(app_id_or_name: str):
         "app": app,
         "connections": connections,
         "tasks": [
-            {
-                **t.dict(by_alias=True),
-                "sequence_info": await get_task_info(t)
-            }
+            {**t.dict(by_alias=True), "sequence_info": await get_task_info(t)}
             for t in tasks
         ],
         "sequences": {

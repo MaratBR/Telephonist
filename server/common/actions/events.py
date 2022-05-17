@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Optional, Union
 from uuid import UUID
 
@@ -130,7 +130,6 @@ class SequenceCreated(_SequenceEvent):
 
 class SequenceFinished(_SequenceEvent):
     error: Optional[Any]
-    is_skipped: bool
 
 
 async def apply_sequence_updates_on_event(event: Event):
@@ -196,7 +195,6 @@ async def _on_sequence_finished(sequences: list[SequenceFinished]):
                 "event": "finished",
                 "sequence_id": m.sequence_id,
                 "error": m.error,
-                "is_skipped": m.is_skipped,
             },
         )
 
@@ -263,7 +261,6 @@ async def create_sequence_and_start_event(
 
 class FinishSequence(AppBaseModel):
     error_message: Optional[str]
-    is_skipped: bool = False
     metadata: Optional[dict[str, Any]]
 
 
@@ -274,18 +271,15 @@ async def finish_sequence(
         raise HTTPException(409, f"sequence {sequence.id} is already finished")
     sequence.finished_at = datetime.utcnow()
     sequence.error = finish_request.error_message
-    if finish_request.is_skipped:
-        sequence.state = EventSequenceState.SKIPPED
-    elif finish_request.error_message:
+    sequence.state_updated_at = datetime.utcnow()
+    if finish_request.error_message:
         sequence.state = EventSequenceState.FAILED
     else:
         sequence.state = EventSequenceState.SUCCEEDED
     sequence.meta = {}  # TODO ????
     await sequence.replace()
     stop_event = (
-        CANCELLED_EVENT
-        if finish_request.is_skipped
-        else FAILED_EVENT
+        FAILED_EVENT
         if finish_request.error_message is not None
         else SUCCEEDED_EVENT
     )
@@ -318,3 +312,23 @@ async def finish_sequence(
         )
 
     return events
+
+
+async def orphan_old_sequences():
+    q = EventSequence.find(
+        EventSequence.state == EventSequenceState.FROZEN,
+        EventSequence.state_updated_at
+        <= datetime.utcnow() - timedelta(days=1),
+    )
+    count = await q.count()
+    if count == 0:
+        return
+    _logger.warning(f"detected {count} frozen sequences older than 1 day")
+    await q.update(
+        {
+            "$set": {
+                "state": EventSequenceState.ORPHANED,
+                "state_updated_at": datetime.utcnow(),
+            }
+        }
+    )
