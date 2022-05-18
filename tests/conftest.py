@@ -8,18 +8,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from server.app import TelephonistApp
-from server.settings import TestingSettings, settings
+from server.settings import TestingSettings
 from tests.utils import do_auth_client
 
 MONGODB_PORT = 27222
-
-settings.set(TestingSettings())
-
-settings.get().use_non_secure_cookies = True
-settings.get().cookies_policy = "Strict"
-settings.get().redis_url = "redis://localhost:7379"
-settings.get().mongodb_db_name = "test_database" + uuid.uuid4().hex
-settings.get().db_url = f"mongodb://localhost:{MONGODB_PORT}"
 
 
 @pytest.yield_fixture(scope="session")
@@ -38,7 +30,14 @@ def mongodb_server():
 
 
 def create_test_app():
-    app = TelephonistApp(TestingSettings())
+    settings = TestingSettings()
+    settings.use_non_secure_cookies = True
+    settings.cookies_policy = "Strict"
+    settings.redis_url = "redis://localhost:7379"
+    settings.mongodb_db_name = "test_database" + uuid.uuid4().hex
+    settings.db_url = f"mongodb://localhost:{MONGODB_PORT}"
+
+    app = TelephonistApp(settings)
 
     @app.on_event("startup")
     async def create_test_users():

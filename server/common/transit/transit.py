@@ -4,7 +4,9 @@ import inspect
 import logging
 import warnings
 from abc import abstractmethod
-from typing import Optional, Tuple, TypeVar, Union, get_args, get_origin
+from typing import Optional, TypeVar, Union, get_args, get_origin
+
+_logger = logging.getLogger("telephonist.transit")
 
 
 class Handler:
@@ -102,12 +104,112 @@ class FunctionHandler(Handler):
         return await self.function(message)
 
 
+@dataclasses.dataclass
+class BatchConfig:
+    max_batch_size: int
+    delay: float
+
+
 class TransitEndpointBase:
     def __init__(self):
-        self._handlers = {}
+        self._handlers: dict[str, list[Handler]] = {}
         self._enabled_handlers = set()
         self._logger = logging.getLogger("telephonist.transit")
         self._error_logger = self._logger.getChild("error")
+        self._object_handlers = {}
+
+    @staticmethod
+    def infer_message_type_from_signature(fun):
+        parameters = list(inspect.signature(fun).parameters.values())
+        required = [
+            p for p in parameters if p.default is inspect.Parameter.empty
+        ]
+        if len(required) != 1:
+            raise ValueError(
+                "invalid event handler function signature, function must have"
+                " exactly 1 required parameter"
+            )
+        annotation = parameters[0].annotation
+        if annotation is inspect.Parameter.empty:
+            raise ValueError(
+                "invalid event handler function signature, parameter's"
+                " annotation is empty"
+            )
+        if not isinstance(annotation, type):
+            raise ValueError(
+                "invalid event handler function signature, function must have"
+                " 1 required parameter annotated with type of the event"
+            )
+        return annotation
+
+    @staticmethod
+    def infer_handlers(o) -> list[tuple[Union[str, type], Handler]]:
+        if inspect.isfunction(o) or inspect.ismethod(o):
+            assert inspect.iscoroutinefunction(o), (
+                "You can only register coroutine functions, not synchronous"
+                " ones"
+            )
+            metadata = getattr(o, "__transit_handler__", {})
+            message_type: Optional[Union[str, type]] = metadata.get(
+                "message_type"
+            )
+            if message_type is None:
+                # infer message type from function signature
+                message_type = (
+                    message_type_t
+                ) = TransitEndpointBase.infer_message_type_from_signature(o)
+            elif isinstance(message_type, type):
+                message_type_t = message_type
+                try:
+                    inferred_type = (
+                        TransitEndpointBase.infer_message_type_from_signature(
+                            o
+                        )
+                    )
+                    if not issubclass(message_type, inferred_type):
+                        warnings.warn(
+                            f"Inferred type of the event for function {o} is"
+                            " not the same as the supplied one, please check"
+                            " function signature"
+                        )
+                except ValueError:
+                    pass
+            else:
+                message_type_t = None
+
+            batch: Optional[BatchConfig] = metadata.get("batch")
+            handler = FunctionHandler(o)
+            if batch:
+                assert message_type_t, (
+                    "Handler signature must have a type annotation set if you"
+                    " want to use BatchConfig"
+                )
+                assert get_origin(message_type_t) is list, (
+                    "Handler with BatchConfig set must accept list of events"
+                    " (i.e. List[T] or list[T], not T)."
+                    f" message_type_t={message_type_t}"
+                )
+                (message_type_t,) = get_args(message_type_t)
+                message_type = message_type_t
+                assert isinstance(
+                    message_type_t, type
+                ), "Parameter of generic list[T] (or List[T]) must be a type!"
+                handler = BatchHandler(
+                    handler, batch.delay, batch.max_batch_size
+                )
+
+            return [(message_type, handler)]
+
+        else:
+            methods = inspect.getmembers(
+                o,
+                lambda m: inspect.ismethod(m)
+                and hasattr(m, "__transit_handler__"),
+            )
+            handlers = []
+            for _, method in methods:
+                handlers += TransitEndpointBase.infer_handlers(method)
+            return handlers
 
     def add_handler(self, message_type: Union[str, type], handler: Handler):
         if isinstance(message_type, type):
@@ -121,6 +223,45 @@ class TransitEndpointBase:
             handlers.append(handler)
         else:
             self._handlers[message_type_str] = [handler]
+
+    def remove_handler(self, message_type: Union[str, type], handler: Handler):
+        if isinstance(message_type, type):
+            message_type_str = f"TYPED<{message_type.__name__}>"
+        else:
+            message_type_str = message_type
+
+        handlers = self._handlers.get(message_type_str)
+        if handlers and handler in handlers:
+            handlers.remove(handler)
+
+    def register(self, o) -> list[Handler]:
+        handlers = TransitEndpointBase.infer_handlers(o)
+        if len(handlers) > 0:
+            _logger.debug(f"registering handlers for {o}")
+            for message_type, handler in handlers:
+                _logger.debug(
+                    f"\tregistering {handler} for message type {message_type}"
+                )
+                self.add_handler(message_type, handler)
+            self._object_handlers[o] = handlers
+            return [p[1] for p in handlers]
+        else:
+            return []
+
+    def unregister(self, o):
+        handlers = self._object_handlers.get(o)
+        if handlers:
+            for message_type, handler in handlers:
+                self.remove_handler(message_type, handler)
+
+            del self._object_handlers[o]
+
+    def unregister_all_of_type(self, type_: type):
+        all_objects = [
+            o for o in self._object_handlers.keys() if type(o) is type_
+        ]
+        for o in all_objects:
+            self.unregister(o)
 
     async def dispatch_message(self, message_type: str, message):
         handlers = self._handlers.get(message_type)
@@ -148,93 +289,13 @@ class TransitEndpointBase:
 TEndpoint = TypeVar("TEndpoint", bound=TransitEndpointBase)
 
 
-@dataclasses.dataclass
-class BatchConfig:
-    max_batch_size: int
-    delay: float
+def mark_handler(batch: Optional[BatchConfig] = None):
+    def decorator(o):
+        setattr(o, "__transit_handler__", {"batch": batch})
+        return o
+
+    return decorator
 
 
-class EndpointExtensions:
-    def register(self: TEndpoint, o=None, batch: Optional[BatchConfig] = None):
-        if o is None:
-
-            def decorator(decorated_o):
-                self.register(decorated_o, batch=batch)
-                return decorated_o
-
-            return decorator
-
-        message_type, handler = EndpointExtensions.infer_handler(o)
-        if batch:
-            if isinstance(message_type, type):
-                if get_origin(message_type) is not list:
-                    raise ValueError(
-                        "invalid inferred message type: batched event handlers"
-                        " require list[T] or typing.List[T]"
-                    )
-            handler = BatchHandler(
-                handler, delay=batch.delay, max_size=batch.max_batch_size
-            )
-            (message_type,) = get_args(message_type)
-        self.add_handler(message_type, handler)
-
-    @staticmethod
-    def infer_handler(
-        o, message_type: Optional[Union[str, type]] = None
-    ) -> Tuple[Union[str, type], Handler]:
-        if inspect.isfunction(o):
-            assert inspect.iscoroutinefunction(o), (
-                "You can only register coroutine functions, not synchronous"
-                " ones"
-            )
-            if message_type is None:
-                # infer message type from function signature
-                message_type = (
-                    EndpointExtensions.infer_message_type_from_signature(o)
-                )
-            elif isinstance(message_type, type):
-                try:
-                    inferred_type = (
-                        EndpointExtensions.infer_message_type_from_signature(o)
-                    )
-                    if not issubclass(message_type, inferred_type):
-                        warnings.warn(
-                            f"Inferred type of the event for function {o} is"
-                            " not the same as the supplied one, please check"
-                            " function signature"
-                        )
-                except ValueError:
-                    pass
-            return message_type, FunctionHandler(o)
-        raise TypeError(
-            "invalid object for registration in event bus, cannot infer"
-            " handler type"
-        )
-
-    @staticmethod
-    def infer_message_type_from_signature(fun):
-        parameters = list(inspect.signature(fun).parameters.values())
-        required = [
-            p for p in parameters if p.default is inspect.Parameter.empty
-        ]
-        if len(required) != 1:
-            raise ValueError(
-                "invalid event handler function signature, function must have"
-                " exactly 1 required parameter"
-            )
-        annotation = parameters[0].annotation
-        if annotation is inspect.Parameter.empty:
-            raise ValueError(
-                "invalid event handler function signature, parameter's"
-                " annotation is empty"
-            )
-        if not isinstance(annotation, type):
-            raise ValueError(
-                "invalid event handler function signature, function must have"
-                " 1 required parameter annotated with type of the event"
-            )
-        return annotation
-
-
-class TransitEndpoint(TransitEndpointBase, EndpointExtensions):
+class TransitEndpoint(TransitEndpointBase):
     pass

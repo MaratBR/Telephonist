@@ -9,6 +9,7 @@ from typing import *
 import orjson
 from aioredis import Redis
 from bson import ObjectId
+from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 
 __all__ = (
@@ -16,9 +17,11 @@ __all__ = (
     "InMemoryBackplane",
     "RedisBackplane",
     "get_backplane",
-    "start_backplane",
     "stop_backplane",
+    "start_backplane",
 )
+
+from server.dependencies import get_application
 
 _logger = logging.getLogger("telephonist.channels")
 
@@ -234,25 +237,25 @@ class RedisBackplane(BackplaneBase):
         await self._pubsub.unsubscribe(channel)
 
 
-_backplane: Optional[BackplaneBase] = None
-
-
-async def start_backplane(backplane: BackplaneBase):
-    global _backplane
-    assert _backplane is None, "You can't initialize backplane twice"
+async def start_backplane(app: FastAPI, backplane: BackplaneBase):
     _logger.debug("starting backplane")
-    _backplane = backplane
-    await _backplane.start()
+    app.state.backplane = backplane
+    await backplane.start()
 
 
-async def stop_backplane():
-    global _backplane
+async def stop_backplane(app: FastAPI):
+    try:
+        backplane = get_backplane(app)
+    except RuntimeError:
+        return
     _logger.debug("stopping backplane")
-    if _backplane:
-        await _backplane.stop()  # noqa
-        _backplane = None
+    await backplane.stop()  # noqa
 
 
-def get_backplane() -> BackplaneBase:
-    assert _backplane is not None, "backplane is not yet initialized"
-    return _backplane
+def get_backplane(app: FastAPI = Depends(get_application)) -> BackplaneBase:
+    try:
+        return app.state.backplane
+    except AttributeError:
+        raise RuntimeError(
+            f"Backplane is not initialized for application {app}"
+        )

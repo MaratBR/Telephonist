@@ -10,9 +10,8 @@ from starlette.requests import Request
 
 from server.common.models import AppBaseModel, BaseDocument
 from server.database.registry import register_model
-from server.settings import settings
 
-from .utils import generate_csrf_token, hash_password, verify_password
+from .utils import generate_csrf_token
 
 __all__ = (
     "User",
@@ -35,22 +34,8 @@ class User(BaseDocument):
     is_blocked: bool = False
     blocked_at: Optional[datetime] = None
 
-    def set_password(self, password: str):
-        self.password_hash = hash_password(password)
-        self.password_reset_required = False
-        self.last_password_changed = datetime.now()
-
     def __str__(self):
         return self.username
-
-    @classmethod
-    async def find_user_by_credentials(cls, login: str, password: str):
-        user = await cls.find_one(
-            {"$or": [{"email": login}, {"normalized_username": login.upper()}]}
-        )
-        if user and verify_password(password, user.password_hash):
-            return user
-        return None
 
     @classmethod
     async def by_username(
@@ -68,7 +53,7 @@ class User(BaseDocument):
     async def create_user(
         cls,
         username: str,
-        password: str,
+        password_hash: str,
         email: Optional[EmailStr] = None,
         password_reset_required: bool = False,
         is_superuser: bool = True,
@@ -77,24 +62,13 @@ class User(BaseDocument):
             username=username,
             normalized_username=username.upper(),
             display_name=username,
-            password_hash=hash_password(password),
+            password_hash=password_hash,
             email=email,
             password_reset_required=password_reset_required,
             is_superuser=is_superuser,
         )
         await user.save()
         return user
-
-    @classmethod
-    async def on_database_ready(cls):
-        if not await cls.find(
-            cls.normalized_username == settings.get().default_username.upper()
-        ).exists():
-            await cls.create_user(
-                settings.get().default_username,
-                settings.get().default_password,
-                password_reset_required=True,
-            )
 
     async def block(self):
         if self.is_blocked:

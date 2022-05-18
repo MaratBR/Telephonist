@@ -10,15 +10,21 @@ from starlette import status
 from starlette.requests import Request
 from starlette.responses import Response
 
-import server.common.actions.application as _internal
 from server.common.actions.utils import Errors
 from server.common.channels import get_channel_layer
+from server.common.channels.layer import ChannelLayer
 from server.common.models import (
     AppBaseModel,
     IdProjection,
     Pagination,
     PaginationResult,
 )
+from server.common.services.application import (
+    ApplicationService,
+    ApplicationUpdate,
+    CreateApplication,
+)
+from server.common.services.task import DefineTask, TaskService
 from server.database import (
     Application,
     ApplicationTask,
@@ -69,8 +75,11 @@ async def get_applications(
 @applications_router.post(
     "", status_code=201, responses={201: {"model": IdProjection}}
 )
-async def create_application(body: _internal.CreateApplication = Body(...)):
-    app = await _internal.create_new_application(body)
+async def create_application(
+    body: CreateApplication = Body(...),
+    application_service: ApplicationService = Depends(),
+):
+    app = await application_service.create(body)
     return ApplicationView(**app.dict(by_alias=True))
 
 
@@ -168,7 +177,7 @@ async def get_application(app_id_or_name: str):
 
 @applications_router.patch("/{app_id}")
 async def update_application(
-    app_id: PydanticObjectId, update: _internal.ApplicationUpdate = Body(...)
+    app_id: str, update: ApplicationUpdate = Body(...)
 ):
     app = await _get_application(app_id)
     app.display_name = (
@@ -190,10 +199,12 @@ async def update_application(
 
 
 @applications_router.delete("/{app_id}")
-async def deactivate_application(app_id: str):
+async def deactivate_application(
+    app_id: str, channel_layer: ChannelLayer = Depends(get_channel_layer)
+):
     app = await _get_application(app_id)
     await app.soft_delete()
-    await get_channel_layer().group_send(
+    await channel_layer.group_send(
         f"a/{app.id}", "force_reconnect", {"reason": "app_deleted"}
     )
     return {"detail": "App deleted"}
@@ -271,19 +282,23 @@ async def check_if_task_name_taken(name: str = Query(...)):
 
 @applications_router.get("/{app_ident}/defined-tasks")
 async def get_application_tasks(
-    app_ident: str, include_deleted: bool = Query(False)
+    app_ident: str,
+    include_deleted: bool = Query(False),
+    task_service: TaskService = Depends(),
 ):
     app = await _get_application(app_ident)
-    return await _internal.get_application_tasks(
+    return await task_service.get_application_tasks(
         app.id, include_deleted=include_deleted
     )
 
 
 @applications_router.post("/{app_ident}/defined-tasks")
 async def define_application_task(
-    app_ident: str, body: _internal.DefineTask = Body(...)
+    app_ident: str,
+    body: DefineTask = Body(...),
+    task_service: TaskService = Depends(),
 ):
     app = await _get_application(app_ident)
-    task = await _internal.define_task(app, body)
-    await _internal.notify_task_changed(task)
+    task = await task_service.define_task(app, body)
+    await task_service.notify_task_changed(task)
     return _detailed_application_task_view(task, app)

@@ -5,12 +5,12 @@ import sys
 from server.app import create_debug_app as _create_debug_app
 
 
-def _debug_init():
+def debug_init():
     root_logger = logging.getLogger("telephonist")
 
     class InfoFilter(logging.Filter):
         def filter(self, rec):
-            return rec.levelno in (logging.DEBUG, logging.INFO)
+            return rec.levelno <= logging.INFO
 
     log_factory = logging.getLogRecordFactory()
     cwd = os.getcwd()
@@ -27,10 +27,12 @@ def _debug_init():
     stderr_handler = logging.StreamHandler(sys.stderr)
     stderr_handler.setFormatter(formatter)
     stderr_handler.setLevel(logging.WARNING)
+
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setFormatter(formatter)
     stdout_handler.setLevel(logging.DEBUG)
     stdout_handler.addFilter(InfoFilter())
+
     root_logger.handlers = [stdout_handler, stderr_handler]
     root_logger.setLevel(logging.DEBUG)
 
@@ -42,6 +44,6 @@ def seconds_to_string(seconds: float):
 
 
 def create_debug_app():
+    debug_init()
     app = _create_debug_app()
-    _debug_init()
     return app

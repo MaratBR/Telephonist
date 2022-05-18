@@ -3,12 +3,8 @@ from typing import List
 
 from fastapi import APIRouter, Query
 
-from server.common.models import (
-    AppBaseModel,
-    Application,
-    ApplicationTask,
-    ApplicationView,
-)
+from server.common.models import AppBaseModel
+from server.database import Application, ApplicationTask, ApplicationView
 
 search_router = APIRouter(prefix="/search")
 

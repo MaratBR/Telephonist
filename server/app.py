@@ -15,11 +15,9 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
-from starlette.types import Receive, Scope, Send
 
 from server import VERSION
 from server.application_api import application_api
-from server.common.channels import get_channel_layer
 from server.common.channels.backplane import (
     BackplaneBase,
     InMemoryBackplane,
@@ -28,9 +26,16 @@ from server.common.channels.backplane import (
     start_backplane,
     stop_backplane,
 )
+from server.common.channels.layer import (
+    start_channel_layer,
+    stop_channel_layer,
+)
+from server.common.services.events import EventsEventHandlers
+from server.common.services.sequence import SequenceEventHandlers
+from server.common.transit import transit_instance
 from server.database import init_database, shutdown_database
 from server.l10n import Localization
-from server.settings import DebugSettings, Settings, settings
+from server.settings import DebugSettings, Settings
 from server.spa import SPA
 from server.user_api import user_api
 
@@ -46,14 +51,16 @@ class TelephonistApp(FastAPI):
         kwargs.setdefault("default_response_class", ORJSONResponse)
         super(TelephonistApp, self).__init__(**kwargs)
         self.settings = settings
+        self.state.settings = settings
+        self.logger = logging.getLogger("telephonist.application")
+        self.localization = Localization(
+            localedir="./locales", supported_locales=["en_US", "ru_RU"]
+        )
+
         self._backplane = backplane
         self._motor_client = (
             motor_client
             or motor.motor_asyncio.AsyncIOMotorClient(settings.db_url)
-        )
-        self.logger = logging.getLogger("telephonist.application")
-        self.localization = Localization(
-            localedir="./locales", supported_locales=["en_US", "ru_RU"]
         )
         self._init_middlewares()
         self._init_routers()
@@ -87,27 +94,23 @@ class TelephonistApp(FastAPI):
         response.headers["X-Request-ID"] = request.scope["request-id"]
         return response
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send):
-        settings.set(self.settings)
-        await super(TelephonistApp, self).__call__(scope, receive, send)
-
     async def __debug_route__(self, request: Request):
         return {
             "headers": dict(request.headers),
             "client": [request.client.host, request.client.port],
             "settings": self.settings,
+            "scheme": request.scope["scheme"],
         }
 
     @staticmethod
     async def _index():
         return {"detail": "OK"}
 
-    @staticmethod
-    async def _backplane_hc():
+    async def _backplane_hc(self):
         now = time.time_ns()
         try:
             async with async_timeout.timeout(0.5):
-                await get_backplane().ping()
+                await get_backplane(self).ping()
             latency = (time.time_ns() - now) / 1000000
             d = {
                 "healthy": True,
@@ -116,7 +119,7 @@ class TelephonistApp(FastAPI):
         except Exception as exc:
             d = {"healthy": False, "exception": {"type": type(exc).__name__}}
 
-        d = {"type": type(get_backplane()).__name__, "status": d}
+        d = {"type": type(get_backplane(self)).__name__, "status": d}
         return d
 
     async def _hc(self):
@@ -130,9 +133,13 @@ class TelephonistApp(FastAPI):
         self.logger.info(f"\tredis_url = {self.settings.redis_url}")
 
         try:
+            transit_instance.register(SequenceEventHandlers(self))
+            transit_instance.register(EventsEventHandlers())
             FastAPICache.init(InMemoryBackend())
             await init_database(
-                self._motor_client, self.settings.mongodb_db_name
+                self.settings,
+                self._motor_client,
+                self.settings.mongodb_db_name,
             )
 
             self.logger.info(
@@ -144,28 +151,31 @@ class TelephonistApp(FastAPI):
                 == Settings.BackplaneBackend.REDIS
             ):
                 await start_backplane(
-                    RedisBackplane(aioredis.from_url(settings.get().redis_url))
+                    self,
+                    RedisBackplane(aioredis.from_url(self.settings.redis_url)),
                 )
             elif (
                 self.settings.backplane_backend
                 == Settings.BackplaneBackend.MEMORY
             ):
-                await start_backplane(InMemoryBackplane())
+                await start_backplane(self, InMemoryBackplane())
             else:
                 raise RuntimeError(
                     "unknown backplane_backend:"
                     f" {self.settings.backplane_backend}"
                 )
-            await get_channel_layer().start()
+            await start_channel_layer(self)
         except Exception as exc:
             self.logger.exception(str(exc))
             raise
 
     async def _on_shutdown(self):
         try:
-            await stop_backplane()
+            transit_instance.unregister_all_of_type(SequenceEventHandlers)
+            transit_instance.unregister_all_of_type(EventsEventHandlers)
             await shutdown_database()
-            await get_channel_layer().dispose()
+            await stop_backplane(self)
+            await stop_channel_layer(self)
         except Exception as exc:
             self.logger.exception(str(exc))
             raise

@@ -18,7 +18,7 @@ from server.database import (
     EventSequenceState,
     get_database,
 )
-from server.settings import settings
+from server.settings import Settings, get_settings
 from server.user_api.applications_router import applications_router
 from server.user_api.auth import auth_router
 from server.user_api.connections_router import connections_router
@@ -142,7 +142,9 @@ async def get_stats():
 
 
 @user_api.get("/summary")
-async def summary(request: Request):
+async def summary(
+    request: Request, settings: Settings = Depends(get_settings)
+):
     now = datetime.now()
     local_now = now.astimezone()
     local_tz = local_now.tzinfo
@@ -154,8 +156,8 @@ async def summary(request: Request):
             "offset_seconds": local_tz.utcoffset(local_now).total_seconds(),
         },
         "settings": {
-            "cookies_policy": settings.get().cookies_policy,
-            "non_secure_cookies": settings.get().use_non_secure_cookies,
+            "cookies_policy": settings.cookies_policy,
+            "non_secure_cookies": settings.use_non_secure_cookies,
         },
         "version": VERSION,
         "detected_locale": request.scope.get("locale"),

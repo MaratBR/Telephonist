@@ -4,8 +4,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends
 
-import server.common.actions as _internal
 from server.common.models import Pagination
+from server.common.services.task import TaskService, TaskUpdate
 from server.database import (
     Application,
     ApplicationTask,
@@ -37,8 +37,8 @@ async def _get_task_view(task: ApplicationTask):
 
 
 @tasks_router.get("/{task_id}")
-async def get_task(task_id: UUID):
-    return await _get_task_view(await _internal.get_task_or_404(task_id))
+async def get_task(task_id: UUID, task_service: TaskService = Depends()):
+    return await _get_task_view(await task_service.get_task_or_404(task_id))
 
 
 class TaskSequencesPagination(Pagination):
@@ -74,27 +74,32 @@ async def get_sequences(
 
 
 @tasks_router.get("/{app_name}/{name}")
-async def get_task_by_qualified_name(app_name: str, name: str):
+async def get_task_by_qualified_name(
+    app_name: str, name: str, task_service: TaskService = Depends()
+):
     return await _get_task_view(
-        await _internal.get_task_or_404(f"{app_name}/{name}")
+        await task_service.get_task_or_404(f"{app_name}/{name}")
     )
 
 
 @tasks_router.delete("/{task_id}")
-async def deactivate_task(task_id: UUID):
-    task = await _internal.get_task_or_404(task_id)
-    await _internal.deactivate_application_task(task)
+async def deactivate_task(
+    task_id: UUID, task_service: TaskService = Depends()
+):
+    task = await task_service.get_task_or_404(task_id)
+    await task_service.deactivate_application_task(task)
     return {"detail": f"Task {task_id} has been deactivated"}
 
 
 @tasks_router.patch("/{task_id}")
 async def update_task(
     task_id: UUID,
-    update: _internal.TaskUpdate = Body(...),
+    update: TaskUpdate = Body(...),
+    task_service: TaskService = Depends(),
 ):
-    task = await _internal.get_task_or_404(task_id)
+    task = await task_service.get_task_or_404(task_id)
     app = await Application.get(task.app_id)
     assert app, "app not found"  # app must exist
-    task = await _internal.apply_application_task_update(task, update)
-    await _internal.notify_task_changed(task)
+    task = await task_service.apply_application_task_update(task, update)
+    await task_service.notify_task_changed(task)
     return {"detail": "Task has been updated"}

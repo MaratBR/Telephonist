@@ -5,7 +5,8 @@ from fastapi import Depends, HTTPException, Query
 from starlette.websockets import WebSocket
 
 from server.auth.exceptions import InvalidToken
-from server.auth.token import JWT, TokenModel
+from server.auth.services import TokenService
+from server.auth.token import TokenModel
 from server.common.channels.wscode import WSC_UNAUTHORIZED
 
 
@@ -43,9 +44,13 @@ TDoc = TypeVar("TDoc", bound=Document)
 
 
 def WSTicket(model_class: Type[TDoc]) -> WSTicketModel[TDoc]:
-    async def dependency(ws: WebSocket, ticket: str = Query(...)):
+    async def dependency(
+        ws: WebSocket,
+        ticket: str = Query(...),
+        token_service: TokenService = Depends(),
+    ):
         try:
-            return JWT[WSTicketModel[model_class]](ticket).model
+            return token_service.decode(WSTicketModel[model_class], ticket)
         except InvalidToken:
             await ws.close(WSC_UNAUTHORIZED)
         except HTTPException:

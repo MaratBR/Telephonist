@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from server import VERSION
 from server.auth.dependencies import get_session
 from server.auth.models import User, UserSession
+from server.auth.services import TokenService
 from server.common.channels import WSTicket, WSTicketModel
 from server.common.channels.hub import Hub, bind_message, ws_controller
 
@@ -14,10 +15,15 @@ ws_router = APIRouter()
 
 
 @ws_router.get("/issue-ws-ticket")
-async def issue_user_ws_ticket(token: UserSession = Depends(get_session)):
+async def issue_user_ws_ticket(
+    token: UserSession = Depends(get_session),
+    token_service: TokenService = Depends(),
+):
     exp = datetime.now() + timedelta(minutes=5)
     return {
-        "ticket": WSTicketModel[User](exp=exp, sub=token.user_id).encode(),
+        "ticket": token_service.encode(
+            WSTicketModel[User](exp=exp, sub=token.user_id)
+        ),
         "exp": exp,
     }
 

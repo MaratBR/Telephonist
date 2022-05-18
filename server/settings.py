@@ -1,13 +1,16 @@
-import contextvars
 import enum
 import secrets
 import warnings
 from datetime import timedelta
 from typing import List, Optional
 
+from fastapi import Depends, FastAPI
 from pydantic import BaseSettings, SecretStr
 
-__all__ = ("Settings", "DebugSettings", "TestingSettings", "settings")
+__all__ = ("Settings", "DebugSettings", "TestingSettings", "get_settings")
+
+
+from server.dependencies import get_application
 
 
 class Settings(BaseSettings):
@@ -15,6 +18,11 @@ class Settings(BaseSettings):
     mongodb_db_name: str = "telephonist"
     db_url: Optional[str] = "mongodb://127.0.0.1:27017"
     redis_url: Optional[str] = "redis://127.0.0.1:6379"
+
+    # https
+    use_https: bool = False
+    ssl_key: Optional[str]
+    ssl_crt: Optional[str]
 
     # authentication, secret, access control
     secret: SecretStr
@@ -75,6 +83,9 @@ class DebugSettings(Settings):
         "http://localhost.localdomain:8080",
     ]
     secret: SecretStr = "secret" * 5
+    use_https = True
+    ssl_crt = "certs/cert.crt"
+    ssl_key = "certs/key.pem"
 
     class Config:
         env_prefix = "telephonist_"
@@ -87,6 +98,5 @@ class TestingSettings(Settings):
     is_testing = True
 
 
-settings: contextvars.ContextVar[Settings] = contextvars.ContextVar(
-    "Application settings"
-)
+def get_settings(app: FastAPI = Depends(get_application)) -> Settings:
+    return app.state.settings

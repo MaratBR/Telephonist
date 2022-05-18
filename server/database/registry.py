@@ -8,6 +8,8 @@ from beanie import Document, init_beanie
 from motor.core import AgnosticDatabase
 from pymongo.errors import CollectionInvalid
 
+from server.settings import Settings
+
 _models = set()
 _client: Optional[motor.motor_asyncio.AsyncIOMotorClient] = None
 _database: Optional[motor.motor_asyncio.AsyncIOMotorDatabase] = None
@@ -49,7 +51,9 @@ is_available = False
 
 
 async def init_database(
-    client: motor.motor_asyncio.AsyncIOMotorClient, database_name: str
+    settings: Settings,
+    client: motor.motor_asyncio.AsyncIOMotorClient,
+    database_name: str,
 ):
     _logger.info(
         "initializing database... (settings.mongodb_db_name=%s)",
@@ -64,7 +68,9 @@ async def init_database(
     )
     for model in _models:
         if hasattr(model, "__motor_create_collection_params__"):
-            params = getattr(model, "__motor_create_collection_params__")()
+            params = getattr(model, "__motor_create_collection_params__")(
+                settings
+            )
             if params:
                 try:
                     try:

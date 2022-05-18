@@ -2,7 +2,7 @@ isort := isort
 black := black
 autoflake := autoflake
 VERSION := $(shell scripts/get_version.py)
-UI_VERSION := 0.2.4
+UI_VERSION := 0.2.5
 AUTOFLAKE_ARGS := -r --ignore-init-module-imports --expand-star-imports --remove-all-unused-imports --remove-duplicate-keys -i
 
 init:

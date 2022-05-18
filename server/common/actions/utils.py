@@ -1,10 +1,7 @@
-from typing import Optional, Type, TypeVar
+from typing import Optional, TypeVar
 
-from beanie import Document
 from fastapi import HTTPException
 from starlette import status
-
-from server.common.models import SoftDeletes
 
 T = TypeVar("T")
 
@@ -20,23 +17,3 @@ class Errors:
     def raise404_if_false(value: bool, message: str = "Not found"):
         if not value:
             raise HTTPException(status.HTTP_404_NOT_FOUND, message)
-
-
-class Prefix(str):
-    def __truediv__(self, other):
-        return Prefix(str(self) + "/" + str(other))
-
-    def is_parent_of(self, prefix):
-        return str(prefix).startswith(str(self) + "/")
-
-
-async def require_model_with_id(
-    model: Type[Document], document_id, *, message: str = "Not found"
-):
-    if issubclass(model, SoftDeletes):
-        q = model.not_deleted()
-    else:
-        q = model
-    Errors.raise404_if_false(
-        await q.find({"_id": document_id}).exists(), message=message
-    )

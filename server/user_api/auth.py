@@ -7,7 +7,6 @@ from starlette import status
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from server.auth.actions import close_session, create_user_session
 from server.auth.dependencies import (
     CurrentUser,
     get_session,
@@ -15,12 +14,18 @@ from server.auth.dependencies import (
     session_cookie,
 )
 from server.auth.models import AuthLog, User, UserSession, UserView
-from server.auth.token import JWT, PasswordResetToken
-from server.auth.utils import hash_password, mask_hex_token, verify_password
+from server.auth.services import (
+    PasswordHashingService,
+    SessionsService,
+    TokenService,
+    UserService,
+)
+from server.auth.token import PasswordResetToken
+from server.auth.utils import mask_hex_token
 from server.common.models import AppBaseModel
 from server.exceptions import ApiException
 from server.l10n import gettext as _
-from server.settings import settings
+from server.settings import Settings, get_settings
 
 auth_router = fastapi.routing.APIRouter(tags=["auth"], prefix="/auth")
 
@@ -53,22 +58,29 @@ async def logout(
     response: Response,
     session: Optional[UserSession] = Depends(get_session),
     session_id: Optional[str] = Depends(session_cookie),
+    sessions_service: SessionsService = Depends(),
 ):
     if session and session_id:
-        await close_session(session_id)
+        await sessions_service.close(session_id)
         response.delete_cookie(session_cookie.cookie)
     return {"detail": "Bye, bye!"}
 
 
 @auth_router.post("/login")
 async def login_user(
-    request: Request,
     response: Response,
     credentials: LoginRequest = Body(...),
     session: Optional[UserSession] = Depends(get_session),
     session_id: Optional[str] = Depends(session_cookie),
+    settings: Settings = Depends(get_settings),
+    sessions_service: SessionsService = Depends(),
+    token_service: TokenService = Depends(),
+    user_service: UserService = Depends(),
 ):
-    user = await User.find_user_by_credentials(
+    if await User.count() == 0:
+        await user_service.create_default_user()
+
+    user = await user_service.find_user_by_credentials(
         credentials.username, credentials.password
     )
     if user is None:
@@ -77,25 +89,26 @@ async def login_user(
         raise HTTPException(401, "User is blocked")
 
     if session and session_id:
-        await close_session(session_id)
+        await sessions_service.close(session_id)
 
     if user.password_reset_required:
         exp = datetime.utcnow().replace(tzinfo=timezone.utc) + timedelta(
             minutes=10
         )
-        password_token = PasswordResetToken(sub=user.id, exp=exp).encode()
+        password_token = token_service.encode(
+            PasswordResetToken(sub=user.id, exp=exp)
+        )
         return PasswordResetRequiredResponse(password_token, exp)
 
-    session_obj = await create_user_session(request, user)
+    session_obj = await sessions_service.create(user)
     session_id = session_obj.id
     response.set_cookie(
         session_cookie.cookie,
         session_id,
         httponly=True,
-        max_age=int(settings.get().session_lifetime.total_seconds()),
-        secure=settings.get().cookies_policy.lower() == "none"
-        or not settings.get().use_non_secure_cookies,
-        samesite=settings.get().cookies_policy,
+        max_age=int(settings.session_lifetime.total_seconds()),
+        secure=settings.use_https,
+        samesite=settings.cookies_policy,
     )
 
     return {
@@ -161,13 +174,18 @@ async def logout(
 
 
 class ResetPassword(AppBaseModel):
-    password_reset_token: JWT[PasswordResetToken]
+    password_reset_token: str
     new_password: str
 
 
 @auth_router.post("/reset-password")
-async def reset_password(body: ResetPassword, request: Request):
-    user = await User.get(body.password_reset_token.model.sub)
+async def reset_password(
+    body: ResetPassword,
+    request: Request,
+    token_service: TokenService = Depends(),
+):
+    token = token_service.decode(PasswordResetToken, body.password_reset_token)
+    user = await User.get(token.sub)
     if not user.password_reset_required:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "password already has been reset"
@@ -190,16 +208,18 @@ async def reset_password_for_current_user(
     body: ResetPasswordCurrentUser = Body(...),
     user: User = CurrentUser(),
     session_id: str = Depends(session_cookie),
+    hashing_service: PasswordHashingService = Depends(),
+    session_service: SessionsService = Depends(),
 ):
-    if not verify_password(body.password, user.password_hash):
+    if not hashing_service.verify_password(body.password, user.password_hash):
         raise ApiException(
             401, "password_reset.password_invalid", "Password is invalid!"
         )
-    user.password_hash = hash_password(body.new_password)
+    user.password_hash = hashing_service.hash_password(body.new_password)
     await user.save()
     sessions = await UserSession.find(UserSession.user_id == user.id).to_list()
     for session in sessions:
         if session.id == session_id:
             continue
-        await close_session(session)
+        await session_service.close(session)
     return {"details": "Password changed successfully"}

@@ -13,7 +13,7 @@ from typing import (
     get_type_hints,
 )
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import Field, ValidationError, parse_obj_as
 from pydantic.typing import is_classvar
 from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
@@ -125,8 +125,8 @@ class OHubMessage(HubMessage):
 
 class Hub:
     _connection: Optional[Connection]
-    _channel_layer: ChannelLayer
     websocket: WebSocket
+    channel_layer: ChannelLayer = Depends(get_channel_layer)
 
     """
     handlers for messages defined with bind_message
@@ -137,10 +137,6 @@ class Hub:
     @property
     def connection(self):
         return self._connection
-
-    @property
-    def channel_layer(self):
-        return self._channel_layer
 
     def __init__(self):
         self._connection = None
@@ -215,8 +211,6 @@ class Hub:
     async def _run(self):
         if self.websocket.application_state == WebSocketState.DISCONNECTED:
             return
-        self._channel_layer = get_channel_layer()
-
         try:
             await self.authenticate()
         except HubAuthenticationException as exc:

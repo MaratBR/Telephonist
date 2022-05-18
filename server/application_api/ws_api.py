@@ -6,11 +6,11 @@ from typing import List, Optional
 
 from beanie import PydanticObjectId
 from beanie.odm.operators.find.comparison import In
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
-import server.common.actions as _internal
 from server import VERSION
 from server.application_api._utils import APPLICATION
+from server.auth.services import TokenService
 from server.common.channels import WSTicket, WSTicketModel
 from server.common.channels.hub import (
     Hub,
@@ -19,6 +19,10 @@ from server.common.channels.hub import (
     ws_controller,
 )
 from server.common.models import AppBaseModel
+from server.common.services.application import ApplicationService
+from server.common.services.logs import LogRecord, LogsService
+from server.common.services.sequence import SequenceService
+from server.common.services.task import DefinedTask
 from server.database import (
     Application,
     ApplicationTask,
@@ -36,10 +40,14 @@ logger = logging.getLogger("telephonist.application_api.ws")
 
 
 @ws_router.post("/issue-ws-ticket")
-async def issue_websocket_token(app=APPLICATION):
+async def issue_websocket_token(
+    app=APPLICATION, token_service: TokenService = Depends()
+):
     exp = datetime.now() + timedelta(minutes=2)
     return {
-        "ticket": WSTicketModel[Application](exp=exp, sub=app.id).encode(),
+        "ticket": token_service.encode(
+            WSTicketModel[Application](exp=exp, sub=app.id)
+        ),
         "exp": exp,
     }
 
@@ -64,13 +72,16 @@ def _if_ready_only(f):
 
 class LogMessage(AppBaseModel):
     sequence_id: Optional[PydanticObjectId]
-    logs: List[_internal.LogRecord]
+    logs: List[LogRecord]
 
 
 @ws_controller(ws_router, "/report")
 class AppReportHub(Hub):
     ticket: WSTicketModel[Application] = WSTicket(Application)
     same_ip: Optional[str] = Query(None)
+    application_service: ApplicationService = Depends()
+    sequence_service: SequenceService = Depends()
+    logs_service: LogsService = Depends()
     _app_id: PydanticObjectId
     _connection_info: Optional[ConnectionInfo] = None
     _connection_info_expire: datetime = datetime.min
@@ -126,7 +137,9 @@ class AppReportHub(Hub):
             )
             self._connection_info.disconnected_at = datetime.utcnow()
             await self._connection_info.save_changes()
-            await _internal.notify_connection_changed(self._connection_info)
+            await self.application_service.notify_connection_changed(
+                self._connection_info
+            )
             q = EventSequence.find(
                 EventSequence.connection_id == self._connection_info.id,
                 EventSequence.state == EventSequenceState.IN_PROGRESS,
@@ -141,7 +154,7 @@ class AppReportHub(Hub):
             )
             sequences = await q.to_list()
             for seq in sequences:
-                await _internal.notify_sequence_changed(seq)
+                await self.sequence_service.notify_sequence_changed(seq)
 
             await self.channel_layer.group_send(
                 f"m/connections/{self._connection_info.id}", "updated"
@@ -197,7 +210,7 @@ class AppReportHub(Hub):
                 {"$set": {"state": EventSequenceState.ORPHANED.name}}
             )
             for seq in sequences:
-                await _internal.notify_sequence_changed(seq)
+                await self.sequence_service.notify_sequence_changed(seq)
 
     @bind_message("check_orphans")
     @_if_ready_only
@@ -271,13 +284,13 @@ class AppReportHub(Hub):
             .to_list()
         )
         await self.send_message(
-            "tasks", [_internal.DefinedTask.from_db(t) for t in tasks]
+            "tasks", [DefinedTask.from_db(t) for t in tasks]
         )
 
     @bind_message("send_log")
     @_if_ready_only
     async def send_log(self, log_message: LogMessage):
-        models = await _internal.send_logs(
+        models = await self.logs_service.send_logs(
             self.ticket.sub, log_message.sequence_id, log_message.logs
         )
         await self.send_message(

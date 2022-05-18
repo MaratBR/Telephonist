@@ -2,7 +2,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -14,10 +14,12 @@ from typing import (
 )
 
 import nanoid
+from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 
 from server.common.channels.backplane import BackplaneBase, get_backplane
 from server.common.models import AppBaseModel
+from server.dependencies import get_application
 
 _PREFIX = "cl/"
 _PREFIX_MESSAGE = _PREFIX + "message/"
@@ -149,14 +151,9 @@ class Connection(HubProxy):
 
 
 class ChannelLayer:
-    def __init__(
-        self, keep_alive_timeout: timedelta, backplane: BackplaneBase
-    ):
-        if keep_alive_timeout.total_seconds() == 0:
-            raise ValueError("Keep-alive timeout cannot be zero")
+    def __init__(self, backplane: BackplaneBase):
         self._backplane = backplane
         self._connections: dict[str, Connection] = {}
-        self._ka_timeout = keep_alive_timeout
         self._id: str = nanoid.generate(size=10)
         self._internal_messages_task: Optional[asyncio.Task] = None
         self._initialized = False
@@ -251,11 +248,23 @@ class ChannelLayer:
         return parts
 
 
-_channel_layer: Optional[ChannelLayer] = None
+async def start_channel_layer(app: FastAPI):
+    app.state.channel_layer = ChannelLayer(backplane=get_backplane(app))
+    await app.state.channel_layer.start()
 
 
-def get_channel_layer():
-    global _channel_layer
-    if _channel_layer is None:
-        _channel_layer = ChannelLayer(timedelta(minutes=1), get_backplane())
-    return _channel_layer
+async def stop_channel_layer(app: FastAPI):
+    try:
+        channel_layer = get_channel_layer(app)
+    except RuntimeError:
+        return
+    await channel_layer.dispose()
+
+
+def get_channel_layer(app: FastAPI = Depends(get_application)) -> ChannelLayer:
+    try:
+        return app.state.channel_layer
+    except AttributeError:
+        raise RuntimeError(
+            f"Channel layer is not initialized on application {app}"
+        )
