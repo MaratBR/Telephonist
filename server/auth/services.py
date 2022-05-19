@@ -84,12 +84,14 @@ class SessionsService:
     def __init__(
         self,
         request: Request,
+        response: Response,
         settings: Settings = Depends(get_settings),
         channel_layer: ChannelLayer = Depends(get_channel_layer),
     ):
         self._request = request
         self._settings = settings
         self._channel_layer = channel_layer
+        self._response = response
 
     @staticmethod
     async def generate_session_id():
@@ -144,6 +146,31 @@ class SessionsService:
             max_age=int(
                 (session.expires_at - datetime.utcnow()).total_seconds()
             ),
+            secure=self._settings.use_https,
+            samesite=self._settings.cookies_policy,
+        )
+
+    async def renew(self, session: UserSession):
+        new_session = UserSession(
+            id=await self.generate_session_id(),
+            user_id=session.user_id,
+            user_agent=self._request.headers.get("user-agent"),
+            ip_address=self._request.client.host,
+            is_superuser=session.is_superuser,
+            expires_at=datetime.utcnow() + self._settings.session_lifetime,
+            renew_at=datetime.utcnow()
+            + self._settings.session_lifetime
+            - timedelta(days=2),
+        )
+        await new_session.insert()
+        return new_session
+
+    def set(self, session_id: str):
+        self._response.set_cookie(
+            session_cookie.cookie,
+            session_id,
+            httponly=True,
+            max_age=int(self._settings.session_lifetime.total_seconds()),
             secure=self._settings.use_https,
             samesite=self._settings.cookies_policy,
         )

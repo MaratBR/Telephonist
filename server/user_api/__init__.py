@@ -6,9 +6,9 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from server import VERSION
-from server.auth.actions import renew_session, set_session
 from server.auth.dependencies import require_session, validate_csrf_token
 from server.auth.models import UserSession
+from server.auth.services import SessionsService
 from server.database import (
     Application,
     AppLog,
@@ -33,10 +33,11 @@ async def require_session_or_renew(
     request: Request,
     response: Response,
     session: UserSession = Depends(require_session),
+    session_service: SessionsService = Depends(),
 ):
     if session.renew_at and session.renew_at < datetime.utcnow():
-        new_session = await renew_session(request, session)
-        set_session(response, new_session)
+        new_session = await session_service.renew(session)
+        session_service.set(new_session.id)
         request.scope["app_session"] = new_session
         return new_session
     return session

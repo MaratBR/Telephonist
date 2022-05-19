@@ -8,8 +8,8 @@ from fastapi import APIRouter, Depends, Query
 from fastapi_cache.decorator import cache
 from starlette.responses import Response
 
-from server.common.actions.utils import Errors
 from server.common.models import AppBaseModel, Pagination
+from server.common.utils import Errors
 from server.database import (
     Application,
     AppLog,
