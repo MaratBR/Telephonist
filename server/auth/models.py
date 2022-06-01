@@ -33,6 +33,7 @@ class User(BaseDocument):
     is_superuser: bool = True
     is_blocked: bool = False
     blocked_at: Optional[datetime] = None
+    will_be_deleted_at: Optional[datetime]
 
     def __str__(self):
         return self.username
@@ -86,6 +87,7 @@ class User(BaseDocument):
             "email",
             "disabled",
             pymongo.IndexModel("normalized_username", unique=True),
+            pymongo.IndexModel("will_be_deleted_at", expireAfterSeconds=0),
         ]
 
 

@@ -7,11 +7,10 @@ import async_timeout
 import motor.motor_asyncio
 import nanoid
 import orjson
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.responses import ORJSONResponse
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
-from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -40,12 +39,22 @@ from server.spa import SPA
 from server.user_api import user_api
 
 
+class Test:
+    def __init__(self, request: Request, a: str):
+        self.a = a
+        self.request = request
+
+
+class Test2:
+    def __init__(self, t: Test = Depends()):
+        self.t = t
+
+
 class TelephonistApp(FastAPI):
     def __init__(
         self,
         settings: Settings,
         backplane: Optional[BackplaneBase] = None,
-        motor_client: Optional[AsyncIOMotorClient] = None,
         **kwargs,
     ):
         kwargs.setdefault("default_response_class", ORJSONResponse)
@@ -58,10 +67,7 @@ class TelephonistApp(FastAPI):
         )
 
         self._backplane = backplane
-        self._motor_client = (
-            motor_client
-            or motor.motor_asyncio.AsyncIOMotorClient(settings.db_url)
-        )
+        self._motor_client = None
         self._init_middlewares()
         self._init_routers()
 
@@ -78,7 +84,7 @@ class TelephonistApp(FastAPI):
         self.add_event_handler("startup", self._on_startup)
         self.add_event_handler("shutdown", self._on_shutdown)
         self.add_api_route("/api/hc", self._hc)
-
+        self.add_api_route("/", self._index)
         self.add_api_route(
             "/api/__debug__",
             cast(
@@ -103,8 +109,8 @@ class TelephonistApp(FastAPI):
         }
 
     @staticmethod
-    async def _index():
-        return {"detail": "OK"}
+    async def _index(t: Test2 = Depends()):
+        return {"detail": "OK" + t.t.a + t.t.request.client.host}
 
     async def _backplane_hc(self):
         now = time.time_ns()
@@ -133,6 +139,9 @@ class TelephonistApp(FastAPI):
         self.logger.info(f"\tredis_url = {self.settings.redis_url}")
 
         try:
+            self._motor_client = motor.motor_asyncio.AsyncIOMotorClient(
+                self.settings.db_url
+            )
             transit_instance.register(SequenceEventHandlers(self))
             transit_instance.register(EventsEventHandlers())
             FastAPICache.init(InMemoryBackend())

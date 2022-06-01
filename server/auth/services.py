@@ -1,8 +1,9 @@
 import secrets
 from datetime import datetime, timedelta
-from typing import Type, TypeVar, Union
+from typing import Optional, Type, TypeVar, Union
 
 from beanie import PydanticObjectId
+from beanie.operators import NE
 from fastapi import Depends
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -180,9 +181,11 @@ class UserService:
     def __init__(
         self,
         hashing_service: PasswordHashingService = Depends(),
+        sessions_service: SessionsService = Depends(),
         settings: Settings = Depends(get_settings),
     ):
         self.hashing_service = hashing_service
+        self.sessions_service = sessions_service
         self.settings = settings
 
     async def update_password(self, user: User, new_password: str):
@@ -191,7 +194,13 @@ class UserService:
 
     async def find_user_by_credentials(self, login: str, password: str):
         user = await User.find_one(
-            {"$or": [{"email": login}, {"normalized_username": login.upper()}]}
+            {
+                "$or": [
+                    {"email": login},
+                    {"normalized_username": login.upper()},
+                ]
+            },
+            NE("will_be_deleted_at", None),
         )
         if user and self.hashing_service.verify_password(
             password, user.password_hash
@@ -208,3 +217,12 @@ class UserService:
             password_reset_required=True,
             is_superuser=True,
         )
+
+    async def deactivate_user(
+        self, user: User, deactivation_timeout: Optional[timedelta] = None
+    ):
+        await self.sessions_service.close_all_sessions(user.id)
+        user.will_be_deleted_at = datetime.utcnow() + (
+            deactivation_timeout or self.settings.user_deactivation_timeout
+        )
+        await user.save()

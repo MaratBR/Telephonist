@@ -12,9 +12,7 @@ from server.common.services.events import (
     FAILED_EVENT,
     SUCCEEDED_EVENT,
     EventService,
-    NewEvent,
 )
-from server.common.transit import dispatch
 from server.common.transit.transit import BatchConfig, mark_handler
 from server.database import (
     ApplicationTask,
@@ -25,6 +23,7 @@ from server.database import (
     EventSequenceState,
 )
 from server.database.sequence import TriggeredBy
+from server.dependencies import get_client_ip
 
 
 class _SequenceEvent(AppBaseModel):
@@ -64,8 +63,10 @@ class SequenceService:
         self,
         channel_layer: ChannelLayer = Depends(get_channel_layer),
         event_service: EventService = Depends(),
+        client_ip: str = Depends(get_client_ip),
     ):
         self._channel_layer = channel_layer
+        self._client_ip = client_ip
         self._logger = logging.getLogger(
             "telephonist.api.services.SequenceService"
         )
@@ -80,7 +81,6 @@ class SequenceService:
         self,
         app_id: PydanticObjectId,
         descriptor: SequenceDescriptor,
-        ip_address: str,
     ) -> tuple[EventSequence, Event]:
         if descriptor.connection_id:
             connection = await ConnectionInfo.get(descriptor.connection_id)
@@ -128,7 +128,6 @@ class SequenceService:
         self,
         sequence: EventSequence,
         finish_request: FinishSequence,
-        ip_address: str,
     ) -> list[Event]:
         if sequence.state.is_finished:
             raise HTTPException(
@@ -143,32 +142,15 @@ class SequenceService:
             sequence.state = EventSequenceState.SUCCEEDED
         sequence.meta = {}
         await sequence.replace()
-        stop_event = (
+        specific_stop_event_name = (
             FAILED_EVENT
             if finish_request.error_message is not None
             else SUCCEEDED_EVENT
         )
-        events = [
-            Event(
-                sequence_id=sequence.id,
-                task_name=sequence.task_name,
-                task_id=sequence.task_id,
-                event_type=event_type,
-                event_key=f"{sequence.task_name}/{event_type}"
-                if sequence.task_name
-                else event_type,
-                publisher_ip=ip_address,
-                app_id=sequence.app_id,
-                data=finish_request.metadata,
-            )
-            for event_type in (
-                stop_event,
-                "stop",  # generic stop event
-            )
-        ]
-        for e in events:
-            await e.insert()
-            await dispatch(NewEvent(id=e.id))
+        specific_stop_event = await self._event_service.create_sequence_event(
+            sequence, specific_stop_event_name
+        )
+        stop_event = await self._event_service.create_stop_event(sequence)
 
         if finish_request.error_message:
             self._logger.warning(
@@ -176,7 +158,7 @@ class SequenceService:
                 f" {finish_request.error_message}"
             )
 
-        return events
+        return [specific_stop_event, stop_event]
 
 
 class SequenceEventHandlers:

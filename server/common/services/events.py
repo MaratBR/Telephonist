@@ -4,7 +4,6 @@ from typing import Any, Optional
 
 from beanie import PydanticObjectId
 from fastapi import Depends, HTTPException
-from starlette.requests import Request
 
 from server.common.channels import get_channel_layer
 from server.common.channels.layer import ChannelLayer
@@ -13,6 +12,7 @@ from server.common.transit import dispatch
 from server.common.transit.transit import BatchConfig, mark_handler
 from server.database import Application, Counter, Event, EventSequence
 from server.database.sequence import EventSequenceState
+from server.dependencies import get_client_ip
 
 _logger = logging.getLogger("telephonist.api.events")
 
@@ -50,11 +50,11 @@ class NewEvent(AppBaseModel):
 class EventService:
     def __init__(
         self,
-        request: Request,
+        client_ip: str = Depends(get_client_ip),
         channel_layer: ChannelLayer = Depends(get_channel_layer),
     ):
         self._channel_layer = channel_layer
-        self._request = request
+        self._client_ip = client_ip
 
     async def create_event(
         self, app: Application, descriptor: EventDescriptor, ip_address: str
@@ -117,12 +117,20 @@ class EventService:
             await seq.save_changes()
 
     async def create_start_event(self, sequence: EventSequence) -> Event:
+        return await self.create_sequence_event(sequence, START_EVENT)
+
+    async def create_stop_event(self, sequence: EventSequence) -> Event:
+        return await self.create_sequence_event(sequence, STOP_EVENT)
+
+    async def create_sequence_event(
+        self, sequence: EventSequence, event_name: str
+    ) -> Event:
         start_event = Event(
             sequence_id=sequence.id,
             task_name=sequence.task_name,
-            event_type=START_EVENT,
-            event_key=f"{sequence.task_name}/start",
-            publisher_ip=self._request,
+            event_type=event_name,
+            event_key=f"{sequence.task_name}/{event_name}",
+            publisher_ip=self._client_ip,
             app_id=sequence.app_id,
         )
         await start_event.insert()

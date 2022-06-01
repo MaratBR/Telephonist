@@ -1,3 +1,5 @@
+import logging
+from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
@@ -8,7 +10,13 @@ from starlette import status
 from server.common.channels import get_channel_layer
 from server.common.channels.layer import ChannelLayer
 from server.common.models import AppBaseModel, Identifier
-from server.database import Application, ConnectionInfo
+from server.database import (
+    Application,
+    AppLog,
+    ConnectionInfo,
+    Event,
+    EventSequence,
+)
 
 from .task import DefinedTask
 
@@ -34,10 +42,34 @@ class SyncResult(AppBaseModel):
 
 
 class ApplicationService:
+    _logger = logging.getLogger("telephonist.api.services.ApplicationService")
+
     def __init__(
         self, channel_layer: ChannelLayer = Depends(get_channel_layer)
     ):
         self._channel_layer = channel_layer
+
+    async def wipe_application(self, app_id: str):
+        self._logger.warning(f"Wiping application {app_id}...")
+        sequences: list[EventSequence] = await EventSequence.find(
+            EventSequence.app_id == app_id
+        ).to_list()
+        for sequence in sequences:
+            await Event.find(Event.sequence_id == sequence.id).delete()
+            await AppLog.find(AppLog.sequence_id == sequence.id).delete()
+            await sequence.delete()
+
+    async def delete(self, application: Application):
+        if application.deleted_at:
+            return
+        application.deleted_at = datetime.utcnow()
+        application.name = "[DELETED] " + application.name
+        application.display_name = (
+            "[DELETED] " + application.display_name
+            if application.display_name.strip() != ""
+            else ""
+        )
+        await application.save()
 
     async def create(
         self, create_application: CreateApplication

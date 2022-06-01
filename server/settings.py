@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     default_password: str = "admin"
 
     # other
-    user_registration_unix_socket_only: bool = True
+    user_deactivation_timeout: timedelta = timedelta(days=7)
     unix_socket_name: str = "unix"
     cookies_policy: str = "Lax"
     use_non_secure_cookies: bool = False

@@ -212,7 +212,7 @@ class ChannelLayer:
             del self._connections[connection.id]
 
     async def close_group_connections(self, group_name: str):
-        await self.group_send(group_name, "disconnect", None)
+        await self._groups_send_raw([group_name], {"type": "disconnect"})
 
     async def close_connection(self, connection_id: str):
         layer_id, connection_id = self._parse_id(connection_id)
@@ -236,9 +236,17 @@ class ChannelLayer:
     ):
         if isinstance(data, BaseModel):
             data = data.dict(by_alias=True)
+        await self._groups_send_raw(
+            groups,
+            {"type": "message", "message": {"type": msg_type, "data": data}},
+        )
+
+    async def _groups_send_raw(self, groups: list[str], data: dict):
+        if isinstance(data, BaseModel):
+            data = data.dict(by_alias=True)
         await self._backplane.publish_many(
             [_PREFIX_MESSAGE + g for g in groups],
-            {"type": "message", "message": {"type": msg_type, "data": data}},
+            data,
         )
 
     def _parse_id(self, connection_id: str):

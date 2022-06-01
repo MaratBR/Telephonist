@@ -40,7 +40,6 @@ class LogsService:
             for log in logs
         ]
         result = await AppLog.insert_many(models)
-        print(f"inserted {len(result.inserted_ids)} logs out of {len(models)}")
         for i in range(len(models)):
             models[i].id = PydanticObjectId(result.inserted_ids[i])
         groups = (

@@ -13,3 +13,13 @@ def get_application(
         assert isinstance(websocket.app, FastAPI)
         return websocket.app
     raise RuntimeError("invalid params: must specify request of websocket")
+
+
+def get_client_ip(
+    *, request: Request = None, websocket: WebSocket = None
+) -> str:
+    if request:
+        return request.client.host
+    if websocket:
+        return websocket.client.host
+    raise RuntimeError("invalid params: must specify request of websocket")

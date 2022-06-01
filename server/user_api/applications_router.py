@@ -1,3 +1,4 @@
+import logging
 from datetime import timezone
 from typing import List, Optional
 
@@ -7,6 +8,7 @@ from beanie.odm.enums import SortDirection
 from bson.errors import InvalidId
 from fastapi import Body, Depends, HTTPException, Query
 from starlette import status
+from starlette.background import BackgroundTasks
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -37,9 +39,10 @@ from server.database import (
 )
 
 _APPLICATION_NOT_FOUND = "Application not found"
+_logger = logging.getLogger("telephonist.api")
 
 
-async def _get_application(app_id_or_name: str):
+async def _get_application(app_id_or_name: str) -> Application:
     try:
         app_id_or_name = PydanticObjectId(app_id_or_name)
     except InvalidId:
@@ -51,7 +54,7 @@ async def _get_application(app_id_or_name: str):
             if isinstance(app_id_or_name, PydanticObjectId)
             else {"name": app_id_or_name},
         ),
-        f'Application with "{app_id_or_name}" not found',
+        f'Application "{app_id_or_name}" not found',
     )
 
 
@@ -69,7 +72,11 @@ class ApplicationsPagination(Pagination):
 async def get_applications(
     args: ApplicationsPagination = Depends(),
 ) -> PaginationResult[ApplicationView]:
-    return await args.paginate(Application, ApplicationView)
+    return await args.paginate(
+        Application,
+        ApplicationView,
+        filter_condition=Application.NOT_DELETED_COND,
+    )
 
 
 @applications_router.post(
@@ -134,13 +141,13 @@ async def get_application(app_id_or_name: str):
             EventSequence.task_id == task.id,
             EventSequence.state == EventSequenceState.IN_PROGRESS,
         ).count()
-        last_sequence: EventSequence = await (
+        last_sequence: list[EventSequence] = await (
             EventSequence.find(EventSequence.task_id == task.id)
             .sort(("created_at", SortDirection.DESCENDING))
             .limit(1)
             .to_list()
         )
-        last_sequence = (
+        last_sequence: dict = (
             last_sequence[0].dict(
                 by_alias=True,
                 include={
@@ -173,6 +180,25 @@ async def get_application(app_id_or_name: str):
             "in_progress": in_progress_sequences,
         },
     }
+
+
+@applications_router.delete("/{app_id}")
+async def delete_application(
+    app_id: str,
+    background_tasks: BackgroundTasks,
+    wipe: bool = False,
+    channel_layer: ChannelLayer = Depends(get_channel_layer),
+    application_service: ApplicationService = Depends(),
+):
+    app = await _get_application(app_id)
+    await channel_layer.close_group_connections(f"a/{app_id}")
+    if wipe:
+        await app.delete()
+        background_tasks.add_task(application_service.wipe_application, app.id)
+        return {"detail": "Application has been deleted. Wipe is scheduled."}
+    else:
+        await application_service.delete(app)
+        return {"detail": "Application has been deleted"}
 
 
 @applications_router.patch("/{app_id}")

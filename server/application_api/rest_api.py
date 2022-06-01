@@ -201,7 +201,6 @@ async def publish_event_route(
 
 @rest_router.post("/sequences", dependencies=[APPLICATION])
 async def create_sequence_route(
-    request: Request,
     app=APPLICATION,
     descriptor: SequenceDescriptor = Body(...),
     sequence_service: SequenceService = Depends(),
@@ -211,7 +210,7 @@ async def create_sequence_route(
         sequence,
         start_event,
     ) = await sequence_service.create_sequence_and_start_event(
-        app.id, descriptor, request.client.host
+        app.id, descriptor
     )
     await dispatch(
         SequenceCreated(

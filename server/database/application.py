@@ -69,7 +69,7 @@ class Application(SoftDeletes):
 
     @classmethod
     def find_by_key(cls, key: str):
-        return cls.find_one({"access_key": key})
+        return cls.find_one({"access_key": key}, cls.NOT_DELETED_COND)
 
     class Collection:
         name = "applications"

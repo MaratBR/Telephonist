@@ -65,3 +65,6 @@ mo:
 	msgfmt -o locales/ru/LC_MESSAGES/messages.mo locales/ru/LC_MESSAGES/messages.pot
 	msgfmt -o locales/en/LC_MESSAGES/messages.mo locales/en/LC_MESSAGES/messages.pot
 
+
+test:
+	pytest tests
