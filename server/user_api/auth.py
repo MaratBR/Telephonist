@@ -214,7 +214,7 @@ async def reset_password_for_current_user(
 ):
     if not hashing_service.verify_password(body.password, user.password_hash):
         raise ApiException(
-            401, "password_reset.password_invalid", "Password is invalid!"
+            401, "password_reset.password_invalid", _("Password is invalid!")
         )
     user.password_hash = hashing_service.hash_password(body.new_password)
     await user.save()
@@ -223,7 +223,7 @@ async def reset_password_for_current_user(
         if session.id == session_id:
             continue
         await session_service.close(session)
-    return {"details": "Password changed successfully"}
+    return {"details": _("Password changed successfully")}
 
 
 @auth_router.delete("/delete-user/{user_id}")
@@ -233,11 +233,15 @@ async def delete_user(
     user_service: UserService = Depends(),
 ):
     if user_id == session.user_id:
-        raise HTTPException(403, "You cannot deactivate your own account")
+        raise HTTPException(403, _("You cannot deactivate your own account"))
     user = await User.get(user_id)
     if user is None or user.will_be_deleted_at:
         raise HTTPException(
-            404, "User not found or already scheduled for deletion"
+            404, _("User not found or already scheduled for deletion")
         )
-    await user_service.deactivate_user(user)
-    return {"detail": "User has been deactivated"}
+    _user, timeout = await user_service.deactivate_user(user)
+    return {
+        "detail": _("User will deactivated in about {0} days").format(
+            timeout.days
+        )
+    }

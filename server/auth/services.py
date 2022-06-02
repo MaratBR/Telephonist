@@ -220,9 +220,11 @@ class UserService:
 
     async def deactivate_user(
         self, user: User, deactivation_timeout: Optional[timedelta] = None
-    ):
-        await self.sessions_service.close_all_sessions(user.id)
-        user.will_be_deleted_at = datetime.utcnow() + (
+    ) -> tuple[User, timedelta]:
+        deactivation_timeout = (
             deactivation_timeout or self.settings.user_deactivation_timeout
         )
+        await self.sessions_service.close_all_sessions(user.id)
+        user.will_be_deleted_at = datetime.utcnow() + deactivation_timeout
         await user.save()
+        return user, deactivation_timeout
