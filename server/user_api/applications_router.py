@@ -121,6 +121,7 @@ async def get_application(app_id_or_name: str):
             EventSequence.state == EventSequenceState.IN_PROGRESS,
         )
         .sort(("_id", SortDirection.DESCENDING))
+        .limit(50)
         .to_list()
     )
     if len(in_progress_sequences) < 50:
@@ -130,7 +131,7 @@ async def get_application(app_id_or_name: str):
                 EventSequence.state != EventSequenceState.IN_PROGRESS,
             )
             .sort(("_id", SortDirection.DESCENDING))
-            .limit(50 - len(in_progress_sequences))
+            .limit(70 - len(in_progress_sequences))
             .to_list()
         )
     else:

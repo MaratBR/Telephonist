@@ -228,8 +228,12 @@ async def reset_password_for_current_user(
 
 @auth_router.delete("/delete-user/{user_id}")
 async def delete_user(
-    user_id: PydanticObjectId, user_service: UserService = Depends()
+    user_id: PydanticObjectId,
+    session: UserSession = Depends(get_session),
+    user_service: UserService = Depends(),
 ):
+    if user_id == session.user_id:
+        raise HTTPException(403, "You cannot deactivate your own account")
     user = await User.get(user_id)
     if user is None or user.will_be_deleted_at:
         raise HTTPException(
