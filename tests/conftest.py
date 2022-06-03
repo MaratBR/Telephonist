@@ -21,7 +21,6 @@ def settings():
 
 
 def create_test_app(settings):
-    settings.use_non_secure_cookies = True
     settings.cookies_policy = "Strict"
     settings.redis_url = "redis://localhost:7379"
     settings.mongodb_db_name = "test_database" + uuid.uuid4().hex

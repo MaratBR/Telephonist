@@ -68,14 +68,6 @@ user_api.include_router(auth_router)
 async def get_stats():
     db = get_database()
     db_stats = await db.command("dbStats")
-    models = AppLog, Event, EventSequence, Application
-    collection_stats = {
-        model.get_settings().collection_settings.name: await db.command(
-            {"collStats": model.get_settings().collection_settings.name}
-        )
-        for model in models
-    }
-
     week_ago = (datetime.utcnow() - timedelta(days=7)).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
@@ -128,16 +120,7 @@ async def get_stats():
                 "used": db_stats["dataSize"],
                 "fs_used": db_stats["fsUsedSize"],
                 "fs_total": db_stats["fsTotalSize"],
-            },
-            "collections": {
-                col_name: {
-                    "size": stats["size"],
-                    "max_size": stats.get("maxSize"),
-                    "capped": stats["capped"],
-                    "count": stats["count"],
-                }
-                for col_name, stats in collection_stats.items()
-            },
+            }
         },
     }
 
@@ -158,7 +141,6 @@ async def summary(
         },
         "settings": {
             "cookies_policy": settings.cookies_policy,
-            "non_secure_cookies": settings.use_non_secure_cookies,
         },
         "version": VERSION,
         "detected_locale": request.scope.get("locale"),

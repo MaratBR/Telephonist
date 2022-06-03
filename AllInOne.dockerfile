@@ -1,3 +1,5 @@
+ARG UI_VERSION
+
 FROM maratbr/telephonist-admin:latest AS frontend
 FROM maratbr/telephonist:latest AS backend
 
@@ -14,4 +16,3 @@ RUN /bin/dockerize -template index.html.tmpl:/spa/index.html
 ENV TELEPHONIST_SPA_PATH=/spa
 ENV TELEPHONIST_DISABLE_SSL=True
 ENV TELEPHONIST_COOKIES_POLICY=Lax
-ENV TELEPHONIST_USE_NON_SECUFRE_COOKIES=True

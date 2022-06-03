@@ -44,7 +44,6 @@ class Settings(BaseSettings):
     user_deactivation_timeout: timedelta = timedelta(days=7)
     unix_socket_name: str = "unix"
     cookies_policy: str = "Lax"
-    use_non_secure_cookies: bool = False
     use_capped_collection_for_logs: bool = True
     logs_capped_collection_max_size_mb: int = 2**16  # 2**16 mb == 64 GiB
     root_path: str = "/api/v1"

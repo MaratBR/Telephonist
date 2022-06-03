@@ -27,8 +27,10 @@ docker-image__main:
 docker-image__allinone:
 	@echo "Building docker image telephonist-all-in-one:$(VERSION)"
 	sudo docker build \
+		--build-arg UI_VERSION=$(UI_VERSION) \
 		-t maratbr/telephonist-all-in-one:$(VERSION) \
 		-t maratbr/telephonist-all-in-one:latest \
+		-t maratbr/telephonist-all-in-one:api$(VERSION)-ui$(UI_VERSION) \
 		-f ./AllInOne.dockerfile \
 		.
 
@@ -47,6 +49,7 @@ publish:
 	sudo docker push maratbr/telephonist:$(VERSION)
 	sudo docker push maratbr/telephonist:latest
 	sudo docker push maratbr/telephonist-all-in-one:$(VERSION)
+	sudo docker push maratbr/telephonist-all-in-one:api$(VERSION)-ui$(UI_VERSION)
 	sudo docker push maratbr/telephonist-all-in-one:latest
 
 run-non-secure-all-in-one:
