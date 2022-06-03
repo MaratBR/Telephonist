@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
+from beanie import PydanticObjectId
 from fastapi import Depends, HTTPException
 from pydantic import Field
 from starlette import status
@@ -49,7 +50,7 @@ class ApplicationService:
     ):
         self._channel_layer = channel_layer
 
-    async def wipe_application(self, app_id: str):
+    async def wipe_application(self, app_id: PydanticObjectId):
         self._logger.warning(f"Wiping application {app_id}...")
         sequences: list[EventSequence] = await EventSequence.find(
             EventSequence.app_id == app_id

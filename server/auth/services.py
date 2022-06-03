@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Type, TypeVar, Union
 
 from beanie import PydanticObjectId
-from beanie.operators import NE
+from beanie.operators import Eq
 from fastapi import Depends
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -200,7 +200,7 @@ class UserService:
                     {"normalized_username": login.upper()},
                 ]
             },
-            NE("will_be_deleted_at", None),
+            Eq("will_be_deleted_at", None),
         )
         if user and self.hashing_service.verify_password(
             password, user.password_hash
@@ -208,14 +208,26 @@ class UserService:
             return user
         return None
 
+    async def create_user(
+        self,
+        username: str,
+        plain_password: str,
+        password_reset_required: bool,
+        is_superuser: bool,
+    ):
+        return await User.create_user(
+            username=username,
+            password_hash=self.hashing_service.hash_password(plain_password),
+            password_reset_required=password_reset_required,
+            is_superuser=is_superuser,
+        )
+
     async def create_default_user(self):
-        await User.create_user(
-            username=self.settings.default_username,
-            password_hash=self.hashing_service.hash_password(
-                self.settings.default_password
-            ),
-            password_reset_required=True,
-            is_superuser=True,
+        return self.create_user(
+            self.settings.default_username,
+            self.settings.default_password,
+            True,
+            True,
         )
 
     async def deactivate_user(

@@ -98,6 +98,7 @@ class UserView(AppBaseModel):
     email: Optional[str]
     is_superuser: bool
     is_blocked: bool = False
+    will_be_deleted_at: Optional[datetime]
 
     @root_validator
     def _root_validator(cls, value: dict) -> dict:

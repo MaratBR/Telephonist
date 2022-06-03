@@ -2,7 +2,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import fastapi
-from beanie import PydanticObjectId
 from fastapi import Body, Depends, HTTPException
 from starlette import status
 from starlette.requests import Request
@@ -224,24 +223,3 @@ async def reset_password_for_current_user(
             continue
         await session_service.close(session)
     return {"details": _("Password changed successfully")}
-
-
-@auth_router.delete("/delete-user/{user_id}")
-async def delete_user(
-    user_id: PydanticObjectId,
-    session: UserSession = Depends(get_session),
-    user_service: UserService = Depends(),
-):
-    if user_id == session.user_id:
-        raise HTTPException(403, _("You cannot deactivate your own account"))
-    user = await User.get(user_id)
-    if user is None or user.will_be_deleted_at:
-        raise HTTPException(
-            404, _("User not found or already scheduled for deletion")
-        )
-    _user, timeout = await user_service.deactivate_user(user)
-    return {
-        "detail": _("User will deactivated in about {0} days").format(
-            timeout.days
-        )
-    }

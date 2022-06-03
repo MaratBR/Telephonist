@@ -6,17 +6,18 @@ from beanie import PydanticObjectId
 from beanie.odm.enums import SortDirection
 from bson.errors import InvalidId
 from fastapi import APIRouter, Body, Depends, HTTPException
-from pydantic import EmailStr, SecretStr
+from pydantic import SecretStr
 from starlette import status
 from starlette.requests import Request
 from starlette.responses import Response
 
-from server.auth.dependencies import superuser
+from server.auth.dependencies import get_session, superuser
 from server.auth.models import AuthLog, User, UserSession, UserView
-from server.auth.services import SessionsService
+from server.auth.services import SessionsService, UserService
 from server.common.channels import get_channel_layer
 from server.common.channels.layer import ChannelLayer
 from server.common.models import AppBaseModel, Pagination
+from server.l10n import gettext as _
 
 users_router = APIRouter(prefix="/users")
 
@@ -38,18 +39,18 @@ async def get_users(
 class CreateUser(AppBaseModel):
     username: str
     is_superuser: bool = False
-    email: Optional[EmailStr]
     password: SecretStr
 
 
 @users_router.post("", status_code=201, dependencies=[Depends(superuser)])
-async def create_user(data: CreateUser = Body(...)):
-    user = await User.create_user(
-        username=data.username,
-        password=data.password.get_secret_value(),
-        email=data.email,
-        password_reset_required=True,
-        is_superuser=data.is_superuser,
+async def create_user(
+    data: CreateUser = Body(...), users_service: UserService = Depends()
+):
+    user = await users_service.create_user(
+        data.username,
+        data.password.get_secret_value(),
+        True,
+        data.is_superuser,
     )
     return UserView(**user.dict(by_alias=True))
 
@@ -137,3 +138,24 @@ async def close_user_session(
     if session:
         await session_service.close(session)
         return {"detail": "Session closed"}
+
+
+@users_router.delete("/{user_id}")
+async def delete_user(
+    user_id: PydanticObjectId,
+    session: UserSession = Depends(get_session),
+    user_service: UserService = Depends(),
+):
+    if user_id == session.user_id:
+        raise HTTPException(403, _("You cannot deactivate your own account"))
+    user = await User.get(user_id)
+    if user is None or user.will_be_deleted_at:
+        raise HTTPException(
+            404, _("User not found or already scheduled for deletion")
+        )
+    _user, timeout = await user_service.deactivate_user(user)
+    return {
+        "detail": _("User will deactivated in about {0} days").format(
+            timeout.days
+        )
+    }
